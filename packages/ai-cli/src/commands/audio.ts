@@ -3,15 +3,21 @@ import { readFile } from "fs/promises";
 import { extname } from "path";
 import { fileURLToPath } from "url";
 
-import { gateway } from "@ai-sdk/gateway";
 import { generateSpeech, transcribe } from "ai";
 import type { Command } from "commander";
 
 import { previewAudioOutputs } from "../lib/audio-preview.js";
 import { buildJobs, runJobs } from "../lib/jobs.js";
-import { fetchGatewayModels, resolveModels } from "../lib/models.js";
+import { resolveModels } from "../lib/models.js";
 import type { OutputFormat } from "../lib/output.js";
 import { parseNonNegativeFloat, parsePositiveInt } from "../lib/parse.js";
+import {
+  createProviderResolver,
+  getSpeechModel,
+  getTranscriptionModel,
+  resolveProviderId,
+  type ProviderId,
+} from "../lib/providers.js";
 import { responseIdFromHeaders } from "../lib/response-id.js";
 import { readStdin, stdinAsText } from "../lib/stdin.js";
 
@@ -28,6 +34,7 @@ const KNOWN_AUDIO_FORMATS = new Set([
 ]);
 
 interface SpeakOptions {
+  provider?: string;
   model?: string;
   output?: string;
   format?: string;
@@ -44,6 +51,7 @@ interface SpeakOptions {
 }
 
 interface TranscribeOptions {
+  provider?: string;
   model?: string;
   output?: string;
   format?: string;
@@ -62,9 +70,10 @@ export function registerAudioCommand(program: Command) {
     .command("speak")
     .description("Generate speech audio from text")
     .argument("[text]", "Text to convert to speech")
+    .option("-P, --provider <provider>", "Provider: openai, fal")
     .option(
       "-m, --model <model>",
-      "Speech model ID (creator/model-name), comma-separated for multi-model"
+      "Speech model ID; prefix with provider: to mix providers"
     )
     .option("-o, --output <path>", "Output file path or directory")
     .option("-f, --format <fmt>", "Audio output format (default: mp3)")
@@ -98,8 +107,17 @@ export function registerAudioCommand(program: Command) {
       const speed = opts.speed
         ? parseNonNegativeFloat(opts.speed, "speed")
         : undefined;
-      const gatewayModels = await fetchGatewayModels();
-      const models = resolveModels("speech", opts.model, gatewayModels.speech);
+      const defaultProvider = resolveProviderId(opts.provider);
+      const models = resolveModels(defaultProvider, "speech", opts.model);
+      if (
+        outputFormat !== DEFAULT_AUDIO_FORMAT &&
+        models.some((target) => target.provider === "fal")
+      ) {
+        throw new Error(
+          `--format "${outputFormat}" is not supported by FAL targets; use mp3`
+        );
+      }
+      const providerFor = createProviderResolver();
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
@@ -108,13 +126,14 @@ export function registerAudioCommand(program: Command) {
 
       const { total, failed } = await runJobs(
         jobs,
-        async (modelId) => {
+        async (target) => {
           const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
           const result = await generateSpeech({
-            headers: gatewayHeaders(),
-            model: gateway.speechModel(modelId),
+            model: getSpeechModel(providerFor(target.provider), target.modelId),
             text: speechText,
-            voice: opts.voice ?? defaultVoiceForModel(modelId),
+            voice:
+              opts.voice ??
+              defaultVoiceForModel(target.provider, target.modelId),
             outputFormat,
             instructions: opts.instructions,
             speed,
@@ -154,9 +173,10 @@ export function registerAudioCommand(program: Command) {
     .command("transcribe")
     .description("Transcribe audio to text")
     .argument("[audio]", "Audio file path or URL")
+    .option("-P, --provider <provider>", "Provider: openai, fal")
     .option(
       "-m, --model <model>",
-      "Transcription model ID (creator/model-name), comma-separated for multi-model"
+      "Transcription model ID; prefix with provider: to mix providers"
     )
     .option("-o, --output <path>", "Output file path or directory")
     .option("-f, --format <fmt>", "Output format: md, txt (default: txt)")
@@ -189,12 +209,13 @@ export function registerAudioCommand(program: Command) {
       }
 
       const format = resolveTranscriptFormat(opts.format);
-      const gatewayModels = await fetchGatewayModels();
+      const defaultProvider = resolveProviderId(opts.provider);
       const models = resolveModels(
+        defaultProvider,
         "transcription",
-        opts.model,
-        gatewayModels.transcription
+        opts.model
       );
+      const providerFor = createProviderResolver();
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
@@ -202,11 +223,13 @@ export function registerAudioCommand(program: Command) {
 
       const { total, failed } = await runJobs(
         jobs,
-        async (modelId) => {
+        async (target) => {
           const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
           const result = await transcribe({
-            headers: gatewayHeaders(),
-            model: gateway.transcriptionModel(modelId),
+            model: getTranscriptionModel(
+              providerFor(target.provider),
+              target.modelId
+            ),
             audio: audioInput,
             abortSignal: abort,
           });
@@ -336,13 +359,11 @@ function parseUrl(value: string): URL | null {
   }
 }
 
-function defaultVoiceForModel(modelId: string): string | undefined {
-  return modelId.startsWith("openai/") ? "alloy" : undefined;
-}
-
-function gatewayHeaders(): Record<string, string> {
-  return {
-    "http-referer": "https://github.com/vercel-labs/ai-cli",
-    "x-title": "ai-cli",
-  };
+function defaultVoiceForModel(
+  provider: ProviderId,
+  modelId: string
+): string | undefined {
+  return provider === "openai" || modelId.startsWith("openai/")
+    ? "alloy"
+    : undefined;
 }

@@ -1,4 +1,4 @@
-import { experimental_generateVideo as generateVideo, gateway } from "ai";
+import { experimental_generateVideo as generateVideo } from "ai";
 import type { Command } from "commander";
 
 import {
@@ -7,12 +7,17 @@ import {
   type ImageReference,
 } from "../lib/image-references.js";
 import { buildJobs, runJobs } from "../lib/jobs.js";
-import { fetchGatewayModels, resolveModels } from "../lib/models.js";
+import { resolveModels } from "../lib/models.js";
 import {
   parsePositiveInt,
   parseAspectRatio,
   parseNonNegativeFloat,
 } from "../lib/parse.js";
+import {
+  createProviderResolver,
+  getVideoModel,
+  resolveProviderId,
+} from "../lib/providers.js";
 import { responseIdFromHeaders } from "../lib/response-id.js";
 import { readStdin } from "../lib/stdin.js";
 
@@ -20,6 +25,7 @@ const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 interface VideoOptions {
+  provider?: string;
   model?: string;
   output?: string;
   image?: string[];
@@ -38,8 +44,12 @@ export function registerVideoCommand(program: Command) {
     .description("Generate a video from a prompt")
     .argument("[prompt]", "The prompt to generate a video from")
     .option(
+      "-P, --provider <provider>",
+      "Default provider: openrouter, fal (default: openrouter)"
+    )
+    .option(
       "-m, --model <model>",
-      "Model ID (creator/model-name), comma-separated for multi-model"
+      "Model ID; prefix with provider: to mix providers"
     )
     .option("-o, --output <path>", "Output file path or directory")
     .option(
@@ -100,8 +110,9 @@ export function registerVideoCommand(program: Command) {
           : { image: images[0]! };
       }
 
-      const gatewayModels = await fetchGatewayModels();
-      const models = resolveModels("video", opts.model, gatewayModels.video);
+      const defaultProvider = resolveProviderId(opts.provider);
+      const models = resolveModels(defaultProvider, "video", opts.model);
+      const providerFor = createProviderResolver();
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
@@ -116,14 +127,10 @@ export function registerVideoCommand(program: Command) {
 
       const { total, failed } = await runJobs(
         jobs,
-        async (modelId) => {
+        async (target) => {
           const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
           const result = await generateVideo({
-            headers: {
-              "http-referer": "https://github.com/vercel-labs/ai-cli",
-              "x-title": "ai-cli",
-            },
-            model: gateway.video(modelId),
+            model: getVideoModel(providerFor(target.provider), target.modelId),
             prompt: videoPrompt,
             abortSignal: abort,
             aspectRatio,

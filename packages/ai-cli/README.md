@@ -1,6 +1,6 @@
 # ai
 
-A tiny, agent-native CLI for generating images, video, audio and text with dead-simple commands, stdin support and predictable artifact outputs. Uses [Vercel AI SDK](https://sdk.vercel.ai) and [AI Gateway](https://vercel.com/docs/ai-gateway) for unified access to hundreds of models.
+A tiny, agent-native CLI for generating images, video, audio and text with dead-simple commands, stdin support and predictable artifact outputs. Use OpenRouter, connect directly to OpenAI and FAL, or run local Ollama and OMLX models.
 
 ## Install
 
@@ -8,7 +8,7 @@ A tiny, agent-native CLI for generating images, video, audio and text with dead-
 npm install -g ai-cli
 ```
 
-Requires Node.js 22+ and an [AI Gateway](https://vercel.com/docs/ai-gateway) API key or a provider-specific key (e.g. `OPENAI_API_KEY`).
+Requires Node.js 22+. Cloud providers require their API key. Ollama and OMLX connect to local servers and require no key unless the server enables authentication. OpenRouter is the default provider.
 
 ## Usage
 
@@ -16,8 +16,9 @@ Requires Node.js 22+ and an [AI Gateway](https://vercel.com/docs/ai-gateway) API
 ai image "a cute dog"
 ai video "a spinning triangle"
 ai text "explain quantum computing"
-ai audio speak "Thanks for trying ai-cli"
-ai audio transcribe recording.mp3
+ai text -P ollama -m qwen3 "explain this locally"
+ai audio speak -P openai "Thanks for trying ai-cli"
+ai audio transcribe -P openai recording.mp3
 ai models                          # list available models
 ```
 
@@ -32,8 +33,8 @@ ai text --image screenshot.png "what is broken in this UI?"
 cat photo.png | ai text "describe this image"
 cat notes.txt | ai text "summarize this"
 git diff | ai text "explain these changes"
-echo "Ship the changelog" | ai audio speak -o changelog.mp3
-cat recording.mp3 | ai audio transcribe
+echo "Ship the changelog" | ai audio speak -P openai -o changelog.mp3
+cat recording.mp3 | ai audio transcribe -P openai
 ```
 
 ### Common Options
@@ -41,7 +42,8 @@ cat recording.mp3 | ai audio transcribe
 All commands support:
 
 ```
--m, --model <id>         Model ID (creator/model-name), comma-separated for multi-model
+-P, --provider <name>    Default provider: openrouter, openai, fal, ollama, omlx
+-m, --model <id>         Model ID; prefix with provider: to mix providers
 -o, --output <path>      Output file path or directory
 -n, --count <n>          Number of generations per model (default: 1)
 -p, --concurrency <n>    Max parallel generations (default: 4, video: 2)
@@ -51,13 +53,17 @@ All commands support:
 
 When using `--json`, stdout contains only metadata. Generated text, image, video and audio outputs are written to files even when stdout is piped.
 
-Model IDs can be specified as `creator/model-name` or just `model-name` (resolved against models fetched from the gateway):
+Use the model IDs shown by `ai models`. OpenRouter IDs include the creator prefix; direct and local providers use native IDs. Prefix any model with `<provider>:` to route that model independently:
 
 ```bash
-ai text -m gpt-5.5 "hello"          # resolves to openai/gpt-5.5
-ai image -m flux-2-pro "a sunset"   # resolves to bfl/flux-2-pro
-ai audio speak -m tts-1 "hello"     # resolves to openai/tts-1
+ai text -m openai/gpt-5.5 "hello"
+ai text -P ollama -m qwen3:latest "hello locally"
+ai text -m "openrouter:anthropic/claude-sonnet-4,ollama:qwen3:latest,omlx:qwen3:thinking" "compare these"
+ai image -m openai/gpt-image-2 "a sunset"
+ai audio speak -P openai -m tts-1 "hello"
 ```
+
+Only the first colon separates the provider, so native variants such as `qwen3:thinking` remain intact. `-P` and `AI_CLI_PROVIDER` provide the fallback for unqualified IDs.
 
 ### image
 
@@ -65,8 +71,8 @@ ai audio speak -m tts-1 "hello"     # resolves to openai/tts-1
 -i, --image <path-or-url> Reference image path or URL (repeatable)
 --size <WxH>             Image size (e.g. 1024x1024)
 --aspect-ratio <W:H>     Aspect ratio (e.g. 16:9)
---quality <level>        Quality (standard, hd)
---style <style>          Style (vivid, natural)
+--quality <level>        Provider/model-specific quality level
+--style <style>          OpenAI model style (e.g. vivid, natural)
 --no-preview             Disable inline image preview
 ```
 
@@ -118,8 +124,8 @@ cat screenshot.png | ai text "list the visible errors"
 `audio` has two subcommands:
 
 ```bash
-ai audio speak "Hello from AI Gateway"
-ai audio transcribe recording.mp3
+ai audio speak -P openai "Hello from ai-cli"
+ai audio transcribe -P openai recording.mp3
 ```
 
 #### audio speak
@@ -137,11 +143,11 @@ ai audio transcribe recording.mp3
 `audio speak` accepts text from an argument or stdin and saves audio to `<id>.mp3` by default:
 
 ```bash
-ai audio speak --voice alloy "Read this as a friendly update"
-cat announcement.txt | ai audio speak --format wav -o announcement.wav
+ai audio speak -P openai --voice alloy "Read this as a friendly update"
+cat announcement.txt | ai audio speak -P openai --format wav -o announcement.wav
 ```
 
-When using OpenAI speech models, `ai audio speak` defaults to the `alloy` voice unless `--voice` is provided.
+When using OpenAI speech models, `ai audio speak -P openai` defaults to the `alloy` voice unless `--voice` is provided. FAL speech targets support MP3 output only.
 
 When `-o` points to a file with a known audio extension and `--format` is omitted, the extension selects the audio format. If both are provided, `--format` must match the filename extension.
 
@@ -156,9 +162,9 @@ In interactive terminals, `audio speak` plays the generated audio after saving i
 `audio transcribe` accepts a local path, `file://` URL, `http(s)://` URL or piped audio:
 
 ```bash
-ai audio transcribe meeting.mp3
-ai audio transcribe https://example.com/call.wav
-cat voice-note.mp3 | ai audio transcribe -o transcript.txt
+ai audio transcribe -P openai meeting.mp3
+ai audio transcribe -P openai https://example.com/call.wav
+cat voice-note.mp3 | ai audio transcribe -P openai -o transcript.txt
 ```
 
 ### models
@@ -170,9 +176,9 @@ cat voice-note.mp3 | ai audio transcribe -o transcript.txt
 --json                   Output as JSON (includes descriptions)
 ```
 
-All model types (text, image, video, speech, transcription) are fetched live from the AI Gateway.
+OpenRouter model availability is fetched live from OpenRouter. Direct OpenAI metadata comes from [models.dev](https://models.dev/). Ollama and OMLX models come from each server's `/v1/models` endpoint. Use `ai models -P all` to aggregate catalogs with provider-qualified references. Cloud catalogs are cached locally for one hour, and explicit model IDs do not depend on catalog discovery.
 
-Pass a model ID (or short name) to see its context window, max output, pricing, release date and per-provider latency, throughput and uptime:
+Pass a model ID to see its context window, max output, pricing and release date:
 
 ```
 $ ai models claude-opus-4.6
@@ -188,17 +194,26 @@ Released 2026-02-05 · tool-use · reasoning · vision · web-search
   Cache write  $6.25/M
   Web search   $10/K + input costs
 
-Providers
-  provider   context  latency  throughput  uptime
-  anthropic  1M       1.4s     49tps       99.9%
-  bedrock    1M       1.4s     56tps       99.9%
 ```
+
+### Providers
+
+| Provider   | Text | Image | Video | Speech | Transcription |
+| ---------- | ---: | ----: | ----: | -----: | ------------: |
+| OpenRouter |  Yes |   Yes |   Yes |     No |            No |
+| OpenAI     |  Yes |   Yes |    No |    Yes |           Yes |
+| FAL        |   No |   Yes |   Yes |    Yes |           Yes |
+| Ollama     |  Yes |    No |    No |     No |            No |
+| OMLX       |  Yes |    No |    No |     No |            No |
+
+Ollama and OMLX text models may accept image inputs when the selected local model supports vision. Provider selection is explicit. ai-cli never sends a request to a different provider as a fallback.
 
 ### Multi-Model Comparison
 
-Generate with multiple models by comma-separating `-m`:
+Generate with multiple models by comma-separating `-m`. Provider-qualified IDs can run cloud and local models concurrently:
 
 ```bash
+ai text "compare these approaches" -m "openrouter:anthropic/claude-sonnet-4,ollama:qwen3:latest,omlx:qwen3:thinking"
 ai image "a sunset" -m "openai/gpt-image-1,xai/grok-imagine-image,bfl/flux-2-pro"
 ```
 
@@ -224,41 +239,47 @@ When the CLI needs to choose a filename, it uses a response id when available an
 
 ### Environment Variables
 
-| Variable | Description |
-|---|---|
-| `AI_GATEWAY_API_KEY` | AI Gateway authentication key |
-| `OPENAI_API_KEY` | Provider-specific key (or other provider keys) |
-| `AI_CLI_TEXT_MODEL` | Default text model (overrides `openai/gpt-5.5`) |
-| `AI_CLI_IMAGE_MODEL` | Default image model (overrides `openai/gpt-image-2`) |
-| `AI_CLI_VIDEO_MODEL` | Default video model (overrides `bytedance/seedance-2.0`) |
-| `AI_CLI_SPEECH_MODEL` | Default speech model (overrides `openai/tts-1`) |
-| `AI_CLI_TRANSCRIPTION_MODEL` | Default transcription model (overrides `openai/whisper-1`) |
-| `AI_CLI_OUTPUT_DIR` | Default output directory for generated files |
-| `AI_CLI_PREVIEW` | Set to `1` to force inline image preview, `0` to disable |
-| `NO_COLOR` | Disable ANSI color output |
-| `FORCE_COLOR` | Force color output even when not a TTY |
+| Variable                     | Description                                                 |
+| ---------------------------- | ----------------------------------------------------------- |
+| `AI_CLI_PROVIDER`            | Default: `openrouter`, `openai`, `fal`, `ollama`, or `omlx` |
+| `OPENROUTER_API_KEY`         | OpenRouter API key                                          |
+| `OPENAI_API_KEY`             | OpenAI API key                                              |
+| `FAL_API_KEY` / `FAL_KEY`    | FAL API key                                                 |
+| `OLLAMA_BASE_URL`            | Ollama API URL (default: `http://127.0.0.1:11434/v1`)       |
+| `OLLAMA_API_KEY`             | Optional Ollama server API key                              |
+| `OMLX_BASE_URL`              | OMLX API URL (default: `http://127.0.0.1:8000/v1`)          |
+| `OMLX_API_KEY`               | Optional OMLX server API key                                |
+| `AI_CLI_TEXT_MODEL`          | Default text model for the selected provider                |
+| `AI_CLI_IMAGE_MODEL`         | Default image model for the selected provider               |
+| `AI_CLI_VIDEO_MODEL`         | Default video model for the selected provider               |
+| `AI_CLI_SPEECH_MODEL`        | Default speech model for the selected provider              |
+| `AI_CLI_TRANSCRIPTION_MODEL` | Default transcription model for the selected provider       |
+| `AI_CLI_OUTPUT_DIR`          | Default output directory for generated files                |
+| `AI_CLI_PREVIEW`             | Set to `1` to force inline image preview, `0` to disable    |
+| `NO_COLOR`                   | Disable ANSI color output                                   |
+| `FORCE_COLOR`                | Force color output even when not a TTY                      |
 
-The `-m` flag always takes priority over `AI_CLI_*_MODEL` env vars. The `-o` flag always takes priority over `AI_CLI_OUTPUT_DIR`.
+Provider-qualified model IDs take priority over `-P`, which takes priority over `AI_CLI_PROVIDER`. The `-m` flag takes priority over `AI_CLI_*_MODEL` variables. The `-o` flag takes priority over `AI_CLI_OUTPUT_DIR`. Local providers require an explicit text model through `-m` or `AI_CLI_TEXT_MODEL`.
 
 ### Timeouts
 
 Requests that exceed the timeout are aborted automatically:
 
-| Command | Timeout |
-|---|---|
-| `text` | 120 seconds |
-| `image` | 300 seconds |
-| `video` | 300 seconds |
-| `audio speak` | 120 seconds |
+| Command            | Timeout     |
+| ------------------ | ----------- |
+| `text`             | 120 seconds |
+| `image`            | 300 seconds |
+| `video`            | 300 seconds |
+| `audio speak`      | 120 seconds |
 | `audio transcribe` | 120 seconds |
 
 ### Exit Codes
 
-| Code | Meaning |
-|---|---|
-| `0` | Success |
-| `1` | All generations failed |
-| `2` | Partial failure (some succeeded, some failed) |
+| Code | Meaning                                       |
+| ---- | --------------------------------------------- |
+| `0`  | Success                                       |
+| `1`  | All generations failed                        |
+| `2`  | Partial failure (some succeeded, some failed) |
 
 ## License
 

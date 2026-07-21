@@ -1,10 +1,4 @@
-const RESPONSE_ID_HEADERS = [
-  "x-ai-gateway-response-id",
-  "x-ai-gateway-request-id",
-  "x-vercel-id",
-  "x-request-id",
-  "request-id",
-];
+const RESPONSE_ID_HEADERS = ["x-request-id", "request-id"];
 
 export function responseIdFromHeaders(
   headers?: Record<string, string>

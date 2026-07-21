@@ -4,34 +4,59 @@ description: Environment variables and defaults.
 order: 5
 ---
 
-ai-cli is configured entirely through environment variables. There is no config file.
+ai-cli is configured through command flags and environment variables. There is no config file.
 
 ## Environment variables
 
 <Properties>
-  <Property name="AI_GATEWAY_API_KEY" type="string">
-    Vercel AI Gateway API key. Provides access to all supported models.
+  <Property
+    name="AI_CLI_PROVIDER"
+    type="openrouter | openai | fal | ollama | omlx"
+  >
+    Default provider. OpenRouter is used when unset.
+  </Property>
+  <Property name="OPENROUTER_API_KEY" type="string">
+    OpenRouter API key.
   </Property>
   <Property name="OPENAI_API_KEY" type="string">
-    Provider-specific key (or other provider keys like `ANTHROPIC_API_KEY`).
+    OpenAI API key.
+  </Property>
+  <Property name="FAL_API_KEY" type="string">
+    FAL API key. `FAL_KEY` is also accepted.
+  </Property>
+  <Property name="OLLAMA_BASE_URL" type="URL">
+    Ollama OpenAI-compatible API URL. Defaults to `http://127.0.0.1:11434/v1`.
+  </Property>
+  <Property name="OLLAMA_API_KEY" type="string">
+    Optional key for an authenticated Ollama endpoint.
+  </Property>
+  <Property name="OMLX_BASE_URL" type="URL">
+    OMLX OpenAI-compatible API URL. Defaults to `http://127.0.0.1:8000/v1`.
+  </Property>
+  <Property name="OMLX_API_KEY" type="string">
+    Optional key for an OMLX server started with authentication.
   </Property>
   <Property name="AI_CLI_TEXT_MODEL" type="string">
-    Default text model. Overrides `openai/gpt-5.5`.
+    Default text model for the selected provider.
   </Property>
   <Property name="AI_CLI_IMAGE_MODEL" type="string">
-    Default image model. Overrides `openai/gpt-image-2`.
+    Default image model for the selected provider.
   </Property>
   <Property name="AI_CLI_VIDEO_MODEL" type="string">
-    Default video model. Overrides `bytedance/seedance-2.0`.
+    Default video model for the selected provider.
   </Property>
   <Property name="AI_CLI_SPEECH_MODEL" type="string">
-    Default speech model. Overrides `openai/tts-1`.
+    Default speech model for the selected provider.
   </Property>
   <Property name="AI_CLI_TRANSCRIPTION_MODEL" type="string">
-    Default transcription model. Overrides `openai/whisper-1`.
+    Default transcription model for the selected provider.
   </Property>
   <Property name="AI_CLI_OUTPUT_DIR" type="path">
     Default output directory for generated files.
+  </Property>
+  <Property name="AI_CLI_CACHE_DIR" type="path">
+    Directory for cached model catalogs. Defaults to the platform cache
+    directory.
   </Property>
   <Property name="AI_CLI_PREVIEW" type="0 | 1">
     `1` forces inline preview on, `0` disables it.
@@ -46,16 +71,30 @@ ai-cli is configured entirely through environment variables. There is no config 
 
 ## Precedence
 
-- `-m` flag always takes priority over `AI_CLI_*_MODEL` env vars.
-- `-o` flag always takes priority over `AI_CLI_OUTPUT_DIR`.
+- A provider prefix in `-m` takes priority over `-P`.
+- `-P` supplies the default for unqualified models and takes priority over `AI_CLI_PROVIDER`.
+- `-m` takes priority over `AI_CLI_*_MODEL` variables.
+- `-o` takes priority over `AI_CLI_OUTPUT_DIR`.
 - `--no-preview` takes priority over `AI_CLI_PREVIEW`.
+
+Provider selection never changes because another API key or local server happens to be present. ai-cli does not silently route a request to another provider. Ollama and OMLX require an explicit model through `-m` or `AI_CLI_TEXT_MODEL`.
 
 ## Example shell profile
 
 ```bash
-export AI_GATEWAY_API_KEY="gw_..."
+export AI_CLI_PROVIDER="openrouter"
+export OPENROUTER_API_KEY="your-key"
 export AI_CLI_TEXT_MODEL="anthropic/claude-sonnet-4"
-export AI_CLI_IMAGE_MODEL="bfl/flux-2-pro"
-export AI_CLI_SPEECH_MODEL="openai/tts-1"
+export AI_CLI_IMAGE_MODEL="openai/gpt-image-2"
 export AI_CLI_OUTPUT_DIR="$HOME/ai-output"
+```
+
+Local example:
+
+```bash
+export AI_CLI_PROVIDER="ollama"
+export AI_CLI_TEXT_MODEL="qwen3:latest"
+# Optional overrides:
+export OLLAMA_BASE_URL="http://127.0.0.1:11434/v1"
+export OMLX_BASE_URL="http://127.0.0.1:8000/v1"
 ```

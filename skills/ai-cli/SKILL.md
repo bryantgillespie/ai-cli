@@ -1,118 +1,87 @@
 ---
 name: ai-cli
-description: Generate text, images, video, and audio from the terminal using AI models.
+description: Runs ai-cli to generate text, images, video, speech, and transcripts with cloud or local models. Use when the user asks to generate AI media, invoke OpenRouter/OpenAI/FAL/Ollama/OMLX, compare models, or compose terminal AI pipelines.
 ---
 
 # ai-cli
 
-Generate text, images, video, and audio from the terminal using AI models.
-
-## When to Use
-
-Use when you need to:
-- Generate images from text prompts or existing images
-- Generate video from text prompts or images
-- Generate text (summaries, explanations, code reviews) from prompts or piped content
-- Generate speech from text or transcribe audio files and streams
-- Compare outputs across multiple models side-by-side
-- Build composable media pipelines by chaining commands via stdin/stdout
-
-## Prerequisites
-
-Requires `AI_GATEWAY_API_KEY` or a provider-specific key (e.g. `OPENAI_API_KEY`) in the environment.
-
-## Commands
+## Quick start
 
 ```bash
-ai text "explain this code"              # generate text
-ai image "a sunset over mountains"       # generate an image
-ai video "a spinning triangle"           # generate a video
-ai audio speak "hello"                   # generate speech
-ai audio transcribe recording.mp3        # transcribe audio
-ai models --type audio                   # list speech and transcription models
+ai text "summarize this"
+ai image "a letterpress poster"
+ai video "a paper airplane unfolding"
+ai audio speak -P openai "hello"
+ai audio transcribe -P openai recording.mp3
+ai models
 ```
 
-## Key Flags
+Cloud providers require their corresponding environment variable:
+`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `FAL_API_KEY`. Ollama and OMLX
+use local OpenAI-compatible endpoints. OMLX may require `OMLX_API_KEY`.
+Never print, persist, or include secret values in commands or output.
 
-```
--m, --model <id>       Model ID (provider/name or short name), comma-separated for multi-model
--o, --output <path>    Output file or directory
--n, --count <n>        Number of generations per model
--q, --quiet            Suppress progress output
---json                 Output structured metadata as JSON (paths, timing, success/failure)
-```
+## Providers and models
 
-## Piping Patterns
-
-Chain commands for agent workflows:
+`-P` selects the default provider for unqualified model IDs:
 
 ```bash
-# Pipe content in for summarization
-cat file.txt | ai text "summarize this"
-git diff | ai text "write a commit message"
+ai text -P ollama -m qwen3:latest "explain this locally"
+ai text -P omlx -m local-model "explain this locally"
+ai models -P ollama
+ai models -P omlx
+ai models -P all
+```
 
-# Image-to-video pipeline
+Prefix individual models with `<provider>:` to run providers concurrently:
+
+```bash
+ai text \
+  -m "openrouter:anthropic/model,ollama:qwen3:latest,omlx:local-model" \
+  "compare these approaches"
+```
+
+Only the first colon separates the provider, preserving IDs such as
+`qwen3:thinking`. Unqualified IDs use `-P`, then `AI_CLI_PROVIDER`, then
+OpenRouter. Use `ai models -P <provider>` instead of guessing model IDs.
+
+Default local endpoints:
+
+```text
+Ollama  http://127.0.0.1:11434/v1  (override OLLAMA_BASE_URL)
+OMLX    http://127.0.0.1:8000/v1   (override OMLX_BASE_URL)
+```
+
+## Agent-safe output
+
+Always give binary generation an explicit output path. Prefer `--json` when
+another tool or agent will consume metadata.
+
+```bash
+ai image "a sunset" -o /tmp/sunset.png --json
+ai video "animate this" -i input.png -o /tmp/video.mp4 --json
+ai audio speak -P openai "hello" -o /tmp/speech.mp3 --json
+ai text "summarize" -o /tmp/summary.md --json
+```
+
+JSON results contain `provider`, native `model`, success, timing, and file path.
+Exit code `0` means success, `1` all failed, and `2` partial failure.
+
+Without `-o`, text writes to stdout when piped; image, video, and speech write
+raw binary. Never let raw binary enter agent context.
+
+## Pipelines
+
+```bash
+git diff | ai text "review this change"
+cat screenshot.png | ai text -P ollama -m vision-model "describe errors"
 ai image "a dragon" | ai video "animate this"
-
-# Image editing via stdin
-cat photo.png | ai image "make it a watercolor"
-
-# Audio workflows
-echo "Ship the changelog" | ai audio speak -o changelog.mp3
-cat recording.mp3 | ai audio transcribe -o transcript.txt
+cat recording.mp3 | ai audio transcribe -P openai -o /tmp/transcript.txt
 ```
 
-## Structured Output
+## Failure checks
 
-Use `--json` to get machine-readable results:
-
-```bash
-ai image "a sunset" --json
-```
-
-Returns:
-```json
-{
-  "elapsed_ms": 3420,
-  "count": 1,
-  "results": [
-    {
-      "index": 1,
-      "model": "openai/gpt-image-2",
-      "elapsed_ms": 3420,
-      "success": true,
-      "file": "/path/to/resp_abc123.png"
-    }
-  ]
-}
-```
-
-## Multi-Model Comparison
-
-```bash
-ai image "a sunset" -m "openai/gpt-image-1,bfl/flux-2-pro,xai/grok-imagine-image"
-```
-
-## Output Behavior
-
-- **Interactive (TTY)**: saves to file, prints path to stderr
-- **Piped (non-TTY)**: writes raw content to stdout for chaining
-- **`-o <dir>`**: saves inside directory with auto-generated names
-
-When the CLI chooses a filename, it uses a response ID when available and falls back to a random 8-character ID, such as `resp_abc123.png` or `7f3a9c1d.mp3`.
-
-**Important for agents**: Always use `-o` to save to a file when generating images, video, or speech audio. Without `-o` in a non-TTY context, raw binary data is written to stdout, which wastes context and is not useful for agents. Use `-o output.png`, `-o speech.mp3`, or an output directory and read the file path from `--json` output instead.
-
-## Timeouts
-
-- text: 120 seconds
-- image: 300 seconds
-- video: 300 seconds
-- audio speak: 120 seconds
-- audio transcribe: 120 seconds
-
-## Exit Codes
-
-- `0` — success
-- `1` — all generations failed
-- `2` — partial failure (some succeeded)
+- `API key required`: load the selected provider's environment variable.
+- Local connection failure: verify the server and `*_BASE_URL`.
+- Unsupported capability: choose a provider supporting that command.
+- Mixed run exit `2`: inspect each JSON result by provider and model.

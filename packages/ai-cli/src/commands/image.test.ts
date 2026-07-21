@@ -1,26 +1,27 @@
 import { describe, expect, test } from "bun:test";
 
-import { languageImageProviderOptions } from "./image.js";
+import { imageProviderOptions } from "./image.js";
 
-describe("languageImageProviderOptions", () => {
-  test("returns undefined for non-google creators", () => {
-    expect(languageImageProviderOptions("openai")).toBeUndefined();
-    expect(languageImageProviderOptions("openai", "16:9")).toBeUndefined();
-    expect(languageImageProviderOptions(undefined, "16:9")).toBeUndefined();
+describe("imageProviderOptions", () => {
+  test("routes quality and style to direct OpenAI", () => {
+    expect(
+      imageProviderOptions("openai", { quality: "high", style: "vivid" })
+    ).toEqual({ openai: { quality: "high", style: "vivid" } });
   });
 
-  test("requests image output for google models", () => {
-    expect(languageImageProviderOptions("google")).toEqual({
-      google: { responseModalities: ["IMAGE", "TEXT"] },
+  test("routes quality through OpenRouter", () => {
+    expect(imageProviderOptions("openrouter", { quality: "high" })).toEqual({
+      openrouter: { quality: "high" },
     });
   });
 
-  test("forwards aspect ratio via imageConfig for google models", () => {
-    expect(languageImageProviderOptions("google", "16:9")).toEqual({
-      google: {
-        responseModalities: ["IMAGE", "TEXT"],
-        imageConfig: { aspectRatio: "16:9" },
-      },
-    });
+  test("does not send unsupported style through OpenRouter", () => {
+    expect(imageProviderOptions("openrouter", { style: "vivid" })).toEqual({});
+  });
+
+  test("does not send OpenAI options to FAL", () => {
+    expect(
+      imageProviderOptions("fal", { quality: "high", style: "vivid" })
+    ).toEqual({});
   });
 });

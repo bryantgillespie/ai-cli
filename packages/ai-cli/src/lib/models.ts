@@ -1,41 +1,61 @@
+import { mkdir, readFile, writeFile } from "fs/promises";
+import { homedir } from "os";
+import { dirname, join } from "path";
+
+import {
+  localProviderBaseUrl,
+  PROVIDER_IDS,
+  type ProviderId,
+} from "./providers.js";
+
 export type Modality = "text" | "image" | "video" | "speech" | "transcription";
 
-const DEFAULTS: Record<Modality, string> = {
-  text: process.env.AI_CLI_TEXT_MODEL ?? "openai/gpt-5.5",
-  image: process.env.AI_CLI_IMAGE_MODEL ?? "openai/gpt-image-2",
-  video: process.env.AI_CLI_VIDEO_MODEL ?? "bytedance/seedance-2.0",
-  speech: process.env.AI_CLI_SPEECH_MODEL ?? "openai/tts-1",
-  transcription: process.env.AI_CLI_TRANSCRIPTION_MODEL ?? "openai/whisper-1",
+const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
+  openrouter: {
+    text: "openai/gpt-5.5",
+    image: "openai/gpt-image-2",
+    video: "bytedance/seedance-2.0",
+    speech: "",
+    transcription: "",
+  },
+  openai: {
+    text: "gpt-5.5",
+    image: "gpt-image-2",
+    video: "",
+    speech: "tts-1",
+    transcription: "whisper-1",
+  },
+  fal: {
+    text: "",
+    image: "fal-ai/flux-pro/v1.1-ultra",
+    video: "fal-ai/luma-dream-machine/ray-2",
+    speech: "fal-ai/minimax/speech-02-hd",
+    transcription: "whisper",
+  },
+  ollama: {
+    text: null,
+    image: "",
+    video: "",
+    speech: "",
+    transcription: "",
+  },
+  omlx: {
+    text: null,
+    image: "",
+    video: "",
+    speech: "",
+    transcription: "",
+  },
 };
 
-const GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1/models";
-const GATEWAY_TIMEOUT_MS = 5_000;
-
-export interface ModelEndpoint {
-  provider_name?: string;
-  context_length?: number;
-  max_completion_tokens?: number;
-  pricing?: {
-    prompt?: string;
-    completion?: string;
-    input_cache_read?: string;
-    input_cache_write?: string;
-    web_search?: string;
-    [key: string]: unknown;
-  };
-  tags?: string[];
-  uptime_last_1d?: number;
-  latency_last_1h?: { p50?: number; p95?: number };
-  throughput_last_1h?: { p50?: number; p95?: number };
-}
-
-export interface ModelEndpointsInfo {
-  id: string;
-  name?: string;
-  description?: string;
-  released?: number;
-  endpoints: ModelEndpoint[];
-}
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_IMAGE_MODELS_URL =
+  "https://openrouter.ai/api/v1/images/models";
+const OPENROUTER_VIDEO_MODELS_URL =
+  "https://openrouter.ai/api/v1/videos/models";
+const MODELS_DEV_URL = "https://models.dev/api.json";
+const FETCH_TIMEOUT_MS = 5_000;
+const CACHE_TTL_MS = 60 * 60 * 1_000;
 
 export interface ModelPricing {
   input?: string;
@@ -57,199 +77,473 @@ export interface ModelEntry {
   tags?: string[];
 }
 
-export interface GatewayModels {
+export interface ModelCatalog {
+  provider: ProviderId;
   text: ModelEntry[];
   image: ModelEntry[];
   video: ModelEntry[];
   speech: ModelEntry[];
   transcription: ModelEntry[];
-  /** Models with a modality the CLI can generate with. */
   all: ModelEntry[];
-  /** Every gateway model, including types the CLI cannot generate with
-   * (embedding, realtime, reranking, ...). */
   lookup: ModelEntry[];
-  languageImageModelIds: Set<string>;
 }
 
-interface RawGatewayModel {
-  id: string;
+interface CatalogCacheRecord {
+  fetchedAt: number;
+  entries: ModelEntry[];
+}
+
+interface FetchCatalogOptions {
+  cache?: boolean;
+  fetch?: typeof fetch;
+  now?: number;
+}
+
+interface RawOpenRouterModel {
+  id?: string;
   name?: string;
   description?: string;
-  owned_by?: string;
-  type?: string;
-  tags?: string[];
-  context_window?: number;
-  max_tokens?: number;
-  released?: number;
+  created?: number;
+  context_length?: number;
+  architecture?: {
+    output_modalities?: string[];
+  };
   pricing?: {
-    [key: string]: unknown;
+    prompt?: string;
+    completion?: string;
+    image?: string;
+  };
+  top_provider?: {
+    max_completion_tokens?: number;
   };
 }
 
-let cached: Promise<GatewayModels> | null = null;
+interface RawModelsDevModel {
+  id?: string;
+  name?: string;
+  description?: string;
+  release_date?: string;
+  modalities?: {
+    output?: string[];
+  };
+  cost?: {
+    input?: number;
+    output?: number;
+  };
+  limit?: {
+    context?: number;
+    output?: number;
+  };
+}
 
-export function fetchGatewayModels(): Promise<GatewayModels> {
+interface RawCompatibleModel {
+  id?: string;
+  owned_by?: string;
+}
+
+const BUILTIN_MODELS: Record<ProviderId, ModelEntry[]> = {
+  openrouter: [
+    entry("openai/gpt-5.5", "text"),
+    entry("openai/gpt-image-2", "image"),
+    entry("bytedance/seedance-2.0", "video"),
+  ],
+  openai: [
+    entry("gpt-5.5", "text", "openai"),
+    entry("gpt-image-2", "image", "openai"),
+    entry("tts-1", "speech", "openai"),
+    entry("whisper-1", "transcription", "openai"),
+  ],
+  fal: [
+    entry("fal-ai/flux-pro/v1.1-ultra", "image", "fal-ai"),
+    entry("fal-ai/luma-dream-machine/ray-2", "video", "fal-ai"),
+    entry("fal-ai/minimax/speech-02-hd", "speech", "fal-ai"),
+    entry("whisper", "transcription", "fal"),
+  ],
+  ollama: [],
+  omlx: [],
+};
+
+const memoryCache = new Map<ProviderId, Promise<ModelCatalog>>();
+
+export function fetchModelCatalog(
+  provider: ProviderId,
+  options: FetchCatalogOptions = {}
+): Promise<ModelCatalog> {
+  if (options.cache === false) return fetchCatalog(provider, options);
+
+  let cached = memoryCache.get(provider);
   if (!cached) {
-    cached = doFetch().catch((err) => {
-      cached = null;
-      throw err;
+    cached = fetchCatalog(provider, options).catch((error) => {
+      memoryCache.delete(provider);
+      throw error;
     });
+    memoryCache.set(provider, cached);
   }
   return cached;
 }
 
-export function resetGatewayCache(): void {
-  cached = null;
+export function resetModelCache(): void {
+  memoryCache.clear();
 }
 
-async function doFetch(): Promise<GatewayModels> {
-  const result: GatewayModels = {
-    text: [],
-    image: [],
-    video: [],
-    speech: [],
-    transcription: [],
-    all: [],
-    lookup: [],
-    languageImageModelIds: new Set(),
-  };
-
-  try {
-    const res = await fetch(GATEWAY_MODELS_URL, {
-      signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = (await res.json()) as { data?: RawGatewayModel[] };
-    const models = json.data ?? [];
-
-    const entryMap = new Map<string, ModelEntry>();
-
-    for (const m of models) {
-      const tags = m.tags ?? [];
-      const isImageGen = tags.includes("image-generation");
-      const capabilities: Modality[] = [];
-
-      switch (m.type) {
-        case "language":
-          capabilities.push("text");
-          if (isImageGen) capabilities.push("image");
-          break;
-        case "image":
-          capabilities.push("image");
-          break;
-        case "video":
-          capabilities.push("video");
-          break;
-        case "speech":
-          capabilities.push("speech");
-          break;
-        case "transcription":
-          capabilities.push("transcription");
-          break;
-        default:
-          break;
-      }
-
-      const creator =
-        m.owned_by ??
-        (m.id.slice(0, Math.max(0, m.id.indexOf("/"))) || "other");
-
-      const pricing = normalizePricing(m.pricing);
-
-      const entry: ModelEntry = {
-        id: m.id,
-        name: m.name,
-        description: m.description,
-        creator,
-        capabilities,
-        pricing,
-        contextWindow: m.context_window,
-        maxTokens: m.max_tokens,
-        released: m.released,
-        tags: tags.length > 0 ? tags : undefined,
-      };
-
-      entryMap.set(m.id, entry);
-
-      if (capabilities.includes("text")) result.text.push(entry);
-      if (capabilities.includes("image")) result.image.push(entry);
-      if (capabilities.includes("video")) result.video.push(entry);
-      if (capabilities.includes("speech")) result.speech.push(entry);
-      if (capabilities.includes("transcription"))
-        result.transcription.push(entry);
-
-      if (m.type === "language" && isImageGen) {
-        result.languageImageModelIds.add(m.id);
-      }
-    }
-
-    result.lookup = [...entryMap.values()];
-    result.all = result.lookup.filter((e) => e.capabilities.length > 0);
-  } catch {
-    cached = null;
-    process.stderr.write("Warning: could not fetch models from AI Gateway\n");
+async function fetchCatalog(
+  provider: ProviderId,
+  options: FetchCatalogOptions
+): Promise<ModelCatalog> {
+  const now = options.now ?? Date.now();
+  const useCache = options.cache !== false;
+  const cached = useCache ? await readCache(provider) : null;
+  const cacheTtl = isLocalProvider(provider) ? 0 : CACHE_TTL_MS;
+  if (cached && now - cached.fetchedAt < cacheTtl) {
+    return buildCatalog(provider, cached.entries);
   }
 
-  return result;
-}
-
-export async function fetchModelEndpoints(
-  modelId: string
-): Promise<ModelEndpointsInfo | null> {
   try {
-    const res = await fetch(`${GATEWAY_MODELS_URL}/${modelId}/endpoints`, {
-      signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = (await res.json()) as { data?: ModelEndpointsInfo };
-    if (!json.data) return null;
-    return { ...json.data, endpoints: json.data.endpoints ?? [] };
+    const remote =
+      provider === "openrouter"
+        ? await fetchOpenRouterModels(options.fetch ?? fetch)
+        : provider === "openai"
+          ? await fetchModelsDevProvider("openai", options.fetch ?? fetch)
+          : isLocalProvider(provider)
+            ? await fetchCompatibleModels(provider, options.fetch ?? fetch)
+            : [];
+    const entries = mergeEntries([...BUILTIN_MODELS[provider], ...remote]);
+    if (useCache) await writeCache(provider, { fetchedAt: now, entries });
+    return buildCatalog(provider, entries);
   } catch {
     process.stderr.write(
-      "Warning: could not fetch provider endpoints from AI Gateway\n"
+      `Warning: could not refresh ${provider} models; using cached defaults\n`
     );
+    return buildCatalog(provider, cached?.entries ?? BUILTIN_MODELS[provider]);
+  }
+}
+
+async function fetchOpenRouterModels(
+  fetchImpl: typeof fetch
+): Promise<ModelEntry[]> {
+  const results = await Promise.all([
+    fetchJson<RawOpenRouterModel[]>(fetchImpl, OPENROUTER_MODELS_URL),
+    fetchJson<RawOpenRouterModel[]>(fetchImpl, OPENROUTER_IMAGE_MODELS_URL),
+    fetchJson<RawOpenRouterModel[]>(fetchImpl, OPENROUTER_VIDEO_MODELS_URL),
+  ]);
+
+  const entries: ModelEntry[] = [];
+  for (const [index, models] of results.entries()) {
+    const forcedCapability: Modality | null =
+      index === 1 ? "image" : index === 2 ? "video" : null;
+    for (const model of models) {
+      if (!model.id) continue;
+      const capabilities = forcedCapability
+        ? [forcedCapability]
+        : capabilitiesFromOutputs(model.architecture?.output_modalities);
+      if (capabilities.length === 0) continue;
+      entries.push({
+        id: model.id,
+        name: model.name,
+        description: model.description,
+        creator: creatorFromId(model.id),
+        capabilities,
+        pricing: normalizeOpenRouterPricing(model.pricing),
+        contextWindow: model.context_length,
+        maxTokens: model.top_provider?.max_completion_tokens,
+        released: model.created,
+      });
+    }
+  }
+  return entries;
+}
+
+async function fetchModelsDevProvider(
+  provider: ProviderId,
+  fetchImpl: typeof fetch
+): Promise<ModelEntry[]> {
+  const providers = await fetchJson<
+    Record<string, { models?: Record<string, RawModelsDevModel> }>
+  >(fetchImpl, MODELS_DEV_URL);
+  const models = providers[provider]?.models ?? {};
+
+  return Object.entries(models).flatMap(([id, model]) => {
+    const capabilities = capabilitiesFromOutputs(
+      model.modalities?.output
+    ).filter((capability) =>
+      provider === "openai"
+        ? capability === "text" || capability === "image"
+        : true
+    );
+    if (capabilities.length === 0) return [];
+    return [
+      {
+        id: model.id ?? id,
+        name: model.name,
+        description: model.description,
+        creator: provider,
+        capabilities,
+        pricing: normalizeModelsDevPricing(model.cost),
+        contextWindow: model.limit?.context,
+        maxTokens: model.limit?.output,
+        released: parseDate(model.release_date),
+      },
+    ];
+  });
+}
+
+async function fetchCompatibleModels(
+  provider: "ollama" | "omlx",
+  fetchImpl: typeof fetch
+): Promise<ModelEntry[]> {
+  const apiKey =
+    provider === "ollama"
+      ? process.env.OLLAMA_API_KEY
+      : process.env.OMLX_API_KEY;
+  const models = await fetchJson<RawCompatibleModel[]>(
+    fetchImpl,
+    `${localProviderBaseUrl(provider)}/models`,
+    apiKey ? { authorization: `Bearer ${apiKey}` } : undefined
+  );
+  return models.flatMap((model) =>
+    model.id ? [entry(model.id, "text", model.owned_by || provider)] : []
+  );
+}
+
+async function fetchJson<T>(
+  fetchImpl: typeof fetch,
+  url: string,
+  headers?: Record<string, string>
+): Promise<T> {
+  const response = await fetchImpl(url, {
+    headers: { "user-agent": "ai-cli", ...headers },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const json = (await response.json()) as { data?: T } | T;
+  if (typeof json === "object" && json !== null && "data" in json) {
+    return (json as { data: T }).data;
+  }
+  return json as T;
+}
+
+function buildCatalog(provider: ProviderId, input: ModelEntry[]): ModelCatalog {
+  const lookup = mergeEntries(input);
+  const byCapability = (capability: Modality) =>
+    lookup.filter((model) => model.capabilities.includes(capability));
+  return {
+    provider,
+    text: byCapability("text"),
+    image: byCapability("image"),
+    video: byCapability("video"),
+    speech: byCapability("speech"),
+    transcription: byCapability("transcription"),
+    all: lookup.filter((model) => model.capabilities.length > 0),
+    lookup,
+  };
+}
+
+function mergeEntries(entries: ModelEntry[]): ModelEntry[] {
+  const merged = new Map<string, ModelEntry>();
+  for (const model of entries) {
+    const current = merged.get(model.id);
+    if (!current) {
+      merged.set(model.id, model);
+      continue;
+    }
+    merged.set(model.id, {
+      ...current,
+      ...withoutUndefined(model),
+      capabilities: [
+        ...new Set([...current.capabilities, ...model.capabilities]),
+      ],
+    });
+  }
+  return [...merged.values()];
+}
+
+function withoutUndefined(model: ModelEntry): Partial<ModelEntry> {
+  return Object.fromEntries(
+    Object.entries(model).filter(([, value]) => value !== undefined)
+  ) as Partial<ModelEntry>;
+}
+
+function capabilitiesFromOutputs(outputs?: string[]): Modality[] {
+  const capabilities: Modality[] = [];
+  if (outputs?.includes("text")) capabilities.push("text");
+  if (outputs?.includes("image")) capabilities.push("image");
+  if (outputs?.includes("video")) capabilities.push("video");
+  return capabilities;
+}
+
+function normalizeOpenRouterPricing(
+  pricing?: RawOpenRouterModel["pricing"]
+): ModelPricing | undefined {
+  if (!pricing) return undefined;
+  const normalized = {
+    input: pricing.prompt,
+    output: pricing.completion,
+    image: pricing.image,
+  };
+  return Object.values(normalized).some(Boolean) ? normalized : undefined;
+}
+
+function normalizeModelsDevPricing(
+  cost?: RawModelsDevModel["cost"]
+): ModelPricing | undefined {
+  if (!cost) return undefined;
+  const normalized = {
+    input: cost.input == null ? undefined : String(cost.input / 1_000_000),
+    output: cost.output == null ? undefined : String(cost.output / 1_000_000),
+  };
+  return Object.values(normalized).some(Boolean) ? normalized : undefined;
+}
+
+function parseDate(value?: string): number | undefined {
+  if (!value) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1_000) : undefined;
+}
+
+function entry(
+  id: string,
+  capability: Modality,
+  creator = creatorFromId(id)
+): ModelEntry {
+  return { id, creator, capabilities: [capability] };
+}
+
+function creatorFromId(id: string): string {
+  const slash = id.indexOf("/");
+  return slash === -1 ? "other" : id.slice(0, slash);
+}
+
+function cachePath(provider: ProviderId): string {
+  const root =
+    process.env.AI_CLI_CACHE_DIR ??
+    join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "ai-cli");
+  return join(root, `models-${provider}.json`);
+}
+
+async function readCache(
+  provider: ProviderId
+): Promise<CatalogCacheRecord | null> {
+  try {
+    const value = JSON.parse(await readFile(cachePath(provider), "utf8")) as {
+      fetchedAt?: unknown;
+      entries?: unknown;
+    };
+    if (
+      typeof value.fetchedAt !== "number" ||
+      !Array.isArray(value.entries) ||
+      !value.entries.every(isModelEntry)
+    ) {
+      return null;
+    }
+    return value as CatalogCacheRecord;
+  } catch {
     return null;
   }
 }
 
-function normalizePricing(
-  pricing?: Record<string, unknown>
-): ModelPricing | undefined {
-  if (!pricing) return undefined;
+async function writeCache(
+  provider: ProviderId,
+  value: CatalogCacheRecord
+): Promise<void> {
+  const path = cachePath(provider);
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(value), "utf8");
+  } catch {
+    // Model discovery still works when the cache is not writable.
+  }
+}
 
-  const entries = Object.entries(pricing).filter(
-    ([, value]) => value != null && value !== ""
+function isModelEntry(value: unknown): value is ModelEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const model = value as Partial<ModelEntry>;
+  return (
+    typeof model.id === "string" &&
+    typeof model.creator === "string" &&
+    Array.isArray(model.capabilities) &&
+    model.capabilities.every((item) =>
+      ["text", "image", "video", "speech", "transcription"].includes(item)
+    )
   );
-  if (entries.length === 0) return undefined;
+}
 
-  return Object.fromEntries(entries) as ModelPricing;
+export interface ModelTarget {
+  provider: ProviderId;
+  modelId: string;
+  reference: string;
 }
 
 export function resolveModels(
+  provider: ProviderId,
   modality: Modality,
-  userModel?: string,
-  knownModels?: Pick<ModelEntry, "id">[]
-): string[] {
-  if (!userModel) return [DEFAULTS[modality]];
-  const models = userModel
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean)
-    .map((m) => expandModelId(m, knownModels));
-  return models.length > 0 ? models : [DEFAULTS[modality]];
+  userModel?: string
+): ModelTarget[] {
+  const configured =
+    userModel ?? process.env[modelEnvironmentVariable(modality)];
+  if (configured) {
+    const models = configured
+      .split(",")
+      .map((model) => model.trim())
+      .filter(Boolean)
+      .map((model) => parseModelTarget(model, provider));
+    if (models.length > 0) return models;
+  }
+
+  const fallback = DEFAULTS[provider][modality];
+  if (fallback === null) {
+    throw new Error(
+      `${modality} model is required for provider "${provider}"; use -m or ${modelEnvironmentVariable(modality)}`
+    );
+  }
+  if (!fallback) {
+    throw new Error(
+      `${modality} generation is not supported by provider "${provider}"`
+    );
+  }
+  return [modelTarget(provider, fallback)];
+}
+
+export function parseModelTarget(
+  input: string,
+  defaultProvider: ProviderId
+): ModelTarget {
+  const separator = input.indexOf(":");
+  const prefix = separator === -1 ? "" : input.slice(0, separator);
+  const provider = isProviderId(prefix) ? prefix : defaultProvider;
+  const rawModelId = isProviderId(prefix) ? input.slice(separator + 1) : input;
+  if (!rawModelId) throw new Error(`model ID is required after "${provider}:"`);
+  return modelTarget(provider, normalizeModelId(provider, rawModelId));
+}
+
+function modelTarget(provider: ProviderId, modelId: string): ModelTarget {
+  return { provider, modelId, reference: `${provider}:${modelId}` };
+}
+
+function normalizeModelId(provider: ProviderId, modelId: string): string {
+  return provider === "openai" && modelId.startsWith("openai/")
+    ? modelId.slice("openai/".length)
+    : modelId;
+}
+
+function isProviderId(value: string): value is ProviderId {
+  return PROVIDER_IDS.includes(value as ProviderId);
+}
+
+function isLocalProvider(provider: ProviderId): provider is "ollama" | "omlx" {
+  return provider === "ollama" || provider === "omlx";
+}
+
+function modelEnvironmentVariable(modality: Modality): string {
+  return `AI_CLI_${modality.toUpperCase()}_MODEL`;
 }
 
 export function expandModelId(
   input: string,
   knownModels?: Pick<ModelEntry, "id">[]
 ): string {
-  if (input.includes("/")) return input;
-  if (!knownModels) return input;
-
-  for (const m of knownModels) {
-    const name = m.id.slice(m.id.indexOf("/") + 1);
-    if (name === input) return m.id;
-  }
-
-  return input;
+  if (input.includes("/") || !knownModels) return input;
+  const matches = knownModels.filter(
+    (model) => model.id.slice(model.id.indexOf("/") + 1) === input
+  );
+  return matches.length === 1 ? matches[0].id : input;
 }

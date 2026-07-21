@@ -22,5 +22,8 @@
     "turbo": "2.8.9",
     "ultracite": "7.3.2"
   },
-  "packageManager": "bun@1.3.9"
+  "packageManager": "bun@1.3.9",
+  "patchedDependencies": {
+    "ai@7.0.22": "patches/ai@7.0.22.patch"
+  }
 }

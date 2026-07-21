@@ -1,0 +1,5 @@
+# Upstream mask tests intentionally contain synthetic credential-shaped fixtures.
+14315a742c8a8d15cf5494b6dbf7062fc91ae47e:apps/cli/tests/mask.test.ts:generic-api-key:11
+14315a742c8a8d15cf5494b6dbf7062fc91ae47e:apps/cli/tests/mask.test.ts:generic-api-key:38
+0f23810c3ac94bc1947466cf555549e48ea1e6ac:tests/mask.test.ts:generic-api-key:10
+0f23810c3ac94bc1947466cf555549e48ea1e6ac:tests/mask.test.ts:generic-api-key:37

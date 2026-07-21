@@ -1,449 +1,335 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { rm } from "fs/promises";
+import { join } from "path";
 
 import {
+  expandModelId,
+  fetchModelCatalog,
+  resetModelCache,
   resolveModels,
-  fetchGatewayModels,
-  fetchModelEndpoints,
-  resetGatewayCache,
+  type ModelEntry,
+  type ModelTarget,
 } from "./models.js";
+import type { ProviderId } from "./providers.js";
 
-const originalFetch = globalThis.fetch;
+const originalCacheDir = process.env.AI_CLI_CACHE_DIR;
+const originalLocalConfig = {
+  OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL,
+  OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+  OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
+  OMLX_API_KEY: process.env.OMLX_API_KEY,
+};
 
-afterEach(() => {
-  globalThis.fetch = originalFetch;
-  resetGatewayCache();
+function target(provider: ProviderId, modelId: string): ModelTarget {
+  return { provider, modelId, reference: `${provider}:${modelId}` };
+}
+const modelEnvKeys = [
+  "AI_CLI_TEXT_MODEL",
+  "AI_CLI_IMAGE_MODEL",
+  "AI_CLI_VIDEO_MODEL",
+  "AI_CLI_SPEECH_MODEL",
+  "AI_CLI_TRANSCRIPTION_MODEL",
+] as const;
+
+afterEach(async () => {
+  resetModelCache();
+  for (const key of modelEnvKeys) delete process.env[key];
+  if (originalCacheDir === undefined) delete process.env.AI_CLI_CACHE_DIR;
+  else process.env.AI_CLI_CACHE_DIR = originalCacheDir;
+  for (const [key, value] of Object.entries(originalLocalConfig)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
-
-function mockGateway(models: Record<string, unknown>[]) {
-  globalThis.fetch = mock(() =>
-    Promise.resolve(
-      new Response(JSON.stringify({ data: models }), { status: 200 })
-    )
-  ) as unknown as typeof fetch;
-}
-
-function mockGatewayError() {
-  globalThis.fetch = mock(() =>
-    Promise.reject(new Error("network error"))
-  ) as unknown as typeof fetch;
-}
 
 describe("resolveModels", () => {
-  test("returns default when no user model", () => {
-    expect(resolveModels("text")[0]).toContain("/");
-    expect(resolveModels("image")[0]).toContain("/");
-    expect(resolveModels("video")[0]).toContain("/");
-    expect(resolveModels("speech")[0]).toContain("/");
-    expect(resolveModels("transcription")[0]).toContain("/");
-  });
-
-  test("returns fully-qualified model as-is", () => {
-    expect(resolveModels("text", "openai/gpt-4")).toEqual(["openai/gpt-4"]);
-    expect(resolveModels("image", "openai/gpt-image-1")).toEqual([
-      "openai/gpt-image-1",
+  test("uses provider-specific defaults", () => {
+    expect(resolveModels("openrouter", "text")).toEqual([
+      target("openrouter", "openai/gpt-5.5"),
+    ]);
+    expect(resolveModels("openai", "image")).toEqual([
+      target("openai", "gpt-image-2"),
+    ]);
+    expect(resolveModels("fal", "video")).toEqual([
+      target("fal", "fal-ai/luma-dream-machine/ray-2"),
     ]);
   });
 
-  test("expands short names when knownModels provided", () => {
-    const known = [{ id: "openai/gpt-image-1" }, { id: "bfl/flux-2-pro" }];
-    expect(resolveModels("image", "gpt-image-1", known)).toEqual([
-      "openai/gpt-image-1",
+  test("environment default overrides the built-in default", () => {
+    process.env.AI_CLI_TEXT_MODEL = "anthropic/claude-sonnet-4";
+    expect(resolveModels("openrouter", "text")).toEqual([
+      target("openrouter", "anthropic/claude-sonnet-4"),
     ]);
-    expect(resolveModels("image", "flux-2-pro", known)).toEqual([
-      "bfl/flux-2-pro",
-    ]);
-  });
-
-  test("returns unknown short names as-is when no knownModels", () => {
-    expect(resolveModels("text", "my-model")).toEqual(["my-model"]);
-  });
-
-  test("returns unknown short names as-is when not in knownModels", () => {
-    const known = [{ id: "openai/gpt-5" }];
-    expect(resolveModels("text", "nonexistent", known)).toEqual([
-      "nonexistent",
-    ]);
-  });
-});
-
-describe("resolveModels multi", () => {
-  test("returns default when no user model", () => {
-    const result = resolveModels("text");
-    expect(result).toHaveLength(1);
-    expect(result[0]).toContain("/");
   });
 
   test("splits comma-separated models", () => {
-    const result = resolveModels("image", "openai/gpt-image-1,bfl/flux-2-pro");
-    expect(result).toEqual(["openai/gpt-image-1", "bfl/flux-2-pro"]);
+    expect(
+      resolveModels(
+        "openrouter",
+        "image",
+        "openai/gpt-image-2, google/gemini-3-pro-image"
+      )
+    ).toEqual([
+      target("openrouter", "openai/gpt-image-2"),
+      target("openrouter", "google/gemini-3-pro-image"),
+    ]);
   });
 
-  test("trims whitespace around model names", () => {
-    const result = resolveModels(
-      "image",
-      "openai/gpt-image-1 , bfl/flux-2-pro"
+  test("strips the creator prefix for direct OpenAI", () => {
+    expect(resolveModels("openai", "text", "openai/gpt-5.5")).toEqual([
+      target("openai", "gpt-5.5"),
+    ]);
+  });
+
+  test("routes provider-qualified models independently", () => {
+    expect(
+      resolveModels(
+        "openrouter",
+        "text",
+        "openrouter:anthropic/claude-sonnet-4,ollama:qwen3.6:latest,omlx:qwen3:thinking"
+      )
+    ).toEqual([
+      target("openrouter", "anthropic/claude-sonnet-4"),
+      target("ollama", "qwen3.6:latest"),
+      target("omlx", "qwen3:thinking"),
+    ]);
+  });
+
+  test("preserves an unqualified model ID containing a colon", () => {
+    expect(resolveModels("ollama", "text", "qwen3.6:latest")).toEqual([
+      target("ollama", "qwen3.6:latest"),
+    ]);
+  });
+
+  test("requires an explicit local model", () => {
+    expect(() => resolveModels("ollama", "text")).toThrow(
+      'text model is required for provider "ollama"'
     );
-    expect(result).toEqual(["openai/gpt-image-1", "bfl/flux-2-pro"]);
   });
 
-  test("expands short names in comma list", () => {
-    const known = [{ id: "openai/gpt-image-1" }, { id: "bfl/flux-2-pro" }];
-    const result = resolveModels("image", "gpt-image-1,flux-2-pro", known);
-    expect(result).toEqual(["openai/gpt-image-1", "bfl/flux-2-pro"]);
-  });
-
-  test("filters empty segments from trailing comma", () => {
-    const result = resolveModels("image", "openai/gpt-image-1,");
-    expect(result).toEqual(["openai/gpt-image-1"]);
-  });
-
-  test("falls back to default when all segments are empty", () => {
-    const result = resolveModels("image", ",,,");
-    expect(result).toHaveLength(1);
-    expect(result[0]).toContain("/");
+  test("rejects unsupported provider capabilities", () => {
+    expect(() => resolveModels("openai", "video")).toThrow(
+      'video generation is not supported by provider "openai"'
+    );
+    expect(() => resolveModels("fal", "text")).toThrow(
+      'text generation is not supported by provider "fal"'
+    );
   });
 });
 
-describe("fetchGatewayModels", () => {
-  test("partitions models by type with enriched fields", async () => {
-    mockGateway([
-      {
-        id: "openai/gpt-5",
-        name: "GPT 5",
-        owned_by: "openai",
-        type: "language",
-        tags: [],
-        pricing: { input: "0.000003", output: "0.000015" },
-      },
-      {
-        id: "openai/gpt-image-2",
-        name: "GPT Image 2",
-        description: "Image gen",
-        owned_by: "openai",
-        type: "image",
-        tags: ["image-generation"],
-        pricing: { image: "0.02" },
-      },
-      {
-        id: "google/veo-3.0",
-        name: "Veo 3",
-        owned_by: "google",
-        type: "video",
-        tags: [],
-      },
-      {
-        id: "openai/tts-1",
-        name: "TTS 1",
-        owned_by: "openai",
-        type: "speech",
-        pricing: { speech_input_character_cost: "0.000015" },
-      },
-      {
-        id: "openai/whisper-1",
-        name: "Whisper",
-        owned_by: "openai",
-        type: "transcription",
-        pricing: { transcription_duration_cost_per_second: "0.000006" },
-      },
-      {
-        id: "openai/text-embedding-3",
-        name: "Embedding",
-        owned_by: "openai",
-        type: "embedding",
-        tags: [],
-      },
-    ]);
+describe("expandModelId", () => {
+  test("expands a unique short model name", () => {
+    expect(
+      expandModelId("gpt-5.5", [
+        { id: "openai/gpt-5.5" },
+        { id: "anthropic/claude-sonnet-4" },
+      ])
+    ).toBe("openai/gpt-5.5");
+  });
 
-    const result = await fetchGatewayModels();
+  test("does not guess when a short model name is ambiguous", () => {
+    expect(
+      expandModelId("shared", [{ id: "one/shared" }, { id: "two/shared" }])
+    ).toBe("shared");
+  });
 
-    expect(result.text).toHaveLength(1);
-    expect(result.text[0].id).toBe("openai/gpt-5");
-    expect(result.text[0].creator).toBe("openai");
-    expect(result.text[0].capabilities).toEqual(["text"]);
-    expect(result.text[0].pricing).toEqual({
-      input: "0.000003",
-      output: "0.000015",
+  test("preserves fully-qualified model IDs", () => {
+    expect(expandModelId("openai/gpt-5.5", [])).toBe("openai/gpt-5.5");
+  });
+});
+
+describe("fetchModelCatalog", () => {
+  test("merges OpenRouter text, image, and video discovery", async () => {
+    const urls: string[] = [];
+    const fetchMock = mockFetch((url) => {
+      urls.push(url);
+      if (url.endsWith("/images/models")) {
+        return [{ id: "openai/gpt-image-2", name: "GPT Image 2" }];
+      }
+      if (url.endsWith("/videos/models")) {
+        return [{ id: "bytedance/seedance-2.0", name: "Seedance 2" }];
+      }
+      return [
+        {
+          id: "anthropic/claude-sonnet-4",
+          name: "Claude Sonnet 4",
+          architecture: { output_modalities: ["text"] },
+          pricing: { prompt: "0.000003", completion: "0.000015" },
+          context_length: 200_000,
+        },
+      ];
     });
 
-    expect(result.image).toHaveLength(1);
-    expect(result.image[0].id).toBe("openai/gpt-image-2");
-    expect(result.image[0].creator).toBe("openai");
-    expect(result.image[0].capabilities).toEqual(["image"]);
-    expect(result.image[0].description).toBe("Image gen");
-    expect(result.image[0].pricing).toEqual({ image: "0.02" });
-
-    expect(result.video).toHaveLength(1);
-    expect(result.video[0].id).toBe("google/veo-3.0");
-    expect(result.video[0].creator).toBe("google");
-    expect(result.video[0].capabilities).toEqual(["video"]);
-
-    expect(result.speech).toHaveLength(1);
-    expect(result.speech[0].id).toBe("openai/tts-1");
-    expect(result.speech[0].creator).toBe("openai");
-    expect(result.speech[0].capabilities).toEqual(["speech"]);
-    expect(result.speech[0].pricing).toEqual({
-      speech_input_character_cost: "0.000015",
+    const result = await fetchModelCatalog("openrouter", {
+      cache: false,
+      fetch: fetchMock,
     });
 
-    expect(result.transcription).toHaveLength(1);
-    expect(result.transcription[0].id).toBe("openai/whisper-1");
-    expect(result.transcription[0].creator).toBe("openai");
-    expect(result.transcription[0].capabilities).toEqual(["transcription"]);
-    expect(result.transcription[0].pricing).toEqual({
-      transcription_duration_cost_per_second: "0.000006",
-    });
-
-    // embedding type is excluded from generation lists but stays in lookup
-    expect(result.all).toHaveLength(5);
-    expect(result.lookup).toHaveLength(6);
-    const embedding = result.lookup.find(
-      (m) => m.id === "openai/text-embedding-3"
+    expect(result.text.some((model) => model.id.includes("claude"))).toBe(true);
+    expect(
+      result.image.some((model) => model.id === "openai/gpt-image-2")
+    ).toBe(true);
+    expect(
+      result.video.some((model) => model.id === "bytedance/seedance-2.0")
+    ).toBe(true);
+    expect(urls.every((url) => url.startsWith("https://openrouter.ai/"))).toBe(
+      true
     );
-    expect(embedding?.capabilities).toEqual([]);
-    expect(result.all.some((m) => m.id === "openai/text-embedding-3")).toBe(
+  });
+
+  test("uses only the selected direct provider from models.dev", async () => {
+    const fetchMock = mockFetch(() => ({
+      openai: {
+        models: {
+          "gpt-5.5": {
+            id: "gpt-5.5",
+            name: "GPT-5.5",
+            release_date: "2026-03-01",
+            modalities: { output: ["text"] },
+            cost: { input: 2, output: 8 },
+            limit: { context: 400_000, output: 128_000 },
+          },
+          "future-video": {
+            modalities: { output: ["video"] },
+          },
+        },
+      },
+      "other-provider": {
+        models: {
+          "other/model": {
+            modalities: { output: ["text"] },
+          },
+        },
+      },
+    }));
+
+    const result = await fetchModelCatalog("openai", {
+      cache: false,
+      fetch: fetchMock,
+    });
+
+    expect(result.text.some((model) => model.id === "gpt-5.5")).toBe(true);
+    expect(result.lookup.some((model) => model.id === "other/model")).toBe(
       false
     );
+    expect(result.video).toEqual([]);
+    expect(result.lookup.some((model) => model.id === "tts-1")).toBe(true);
+    expect(result.lookup.some((model) => model.id === "whisper-1")).toBe(true);
   });
 
-  test("language models with image-generation tag appear in both text and image", async () => {
-    mockGateway([
-      {
-        id: "google/gemini-2.5-flash-image",
-        name: "Gemini Flash Image",
-        owned_by: "google",
-        type: "language",
-        tags: ["image-generation"],
-      },
-      {
-        id: "openai/gpt-image-2",
-        name: "GPT Image 2",
-        owned_by: "openai",
-        type: "image",
-        tags: ["image-generation"],
-      },
-    ]);
+  test("discovers models from a local OpenAI-compatible endpoint", async () => {
+    process.env.OMLX_BASE_URL = "http://127.0.0.1:9000/v1/";
+    process.env.OMLX_API_KEY = "local-secret";
+    let request: Request | undefined;
+    const fetchMock = (async (input, init) => {
+      request = new Request(input, init);
+      return Response.json({
+        object: "list",
+        data: [
+          { id: "qwen3:thinking", owned_by: "local" },
+          { object: "model" },
+        ],
+      });
+    }) as typeof fetch;
 
-    const result = await fetchGatewayModels();
-
-    expect(result.text.map((m) => m.id)).toContain(
-      "google/gemini-2.5-flash-image"
-    );
-    expect(result.image.map((m) => m.id)).toContain(
-      "google/gemini-2.5-flash-image"
-    );
-    expect(result.image.map((m) => m.id)).toContain("openai/gpt-image-2");
-
-    const gemini = result.all.find(
-      (m) => m.id === "google/gemini-2.5-flash-image"
-    )!;
-    expect(gemini.capabilities).toEqual(["text", "image"]);
-
-    expect(
-      result.languageImageModelIds.has("google/gemini-2.5-flash-image")
-    ).toBe(true);
-    expect(result.languageImageModelIds.has("openai/gpt-image-2")).toBe(false);
-  });
-
-  test("language models without image-generation tag stay in text only", async () => {
-    mockGateway([
-      {
-        id: "openai/gpt-5",
-        name: "GPT 5",
-        owned_by: "openai",
-        type: "language",
-        tags: ["tool-use"],
-      },
-    ]);
-
-    const result = await fetchGatewayModels();
-
-    expect(result.text).toHaveLength(1);
-    expect(result.image).toHaveLength(0);
-    expect(result.languageImageModelIds.size).toBe(0);
-    expect(result.all[0].capabilities).toEqual(["text"]);
-  });
-
-  test("returns empty lists on gateway error", async () => {
-    mockGatewayError();
-
-    const result = await fetchGatewayModels();
-
-    expect(result.text).toHaveLength(0);
-    expect(result.image).toHaveLength(0);
-    expect(result.video).toHaveLength(0);
-    expect(result.speech).toHaveLength(0);
-    expect(result.transcription).toHaveLength(0);
-    expect(result.all).toHaveLength(0);
-    expect(result.languageImageModelIds.size).toBe(0);
-  });
-
-  test("returns empty lists on non-200 response", async () => {
-    globalThis.fetch = mock(() =>
-      Promise.resolve(new Response("Not Found", { status: 404 }))
-    ) as unknown as typeof fetch;
-
-    const result = await fetchGatewayModels();
-
-    expect(result.text).toHaveLength(0);
-    expect(result.image).toHaveLength(0);
-    expect(result.video).toHaveLength(0);
-    expect(result.speech).toHaveLength(0);
-    expect(result.transcription).toHaveLength(0);
-    expect(result.all).toHaveLength(0);
-  });
-
-  test("caches result across multiple calls", async () => {
-    const fetchMock = mock(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "openai/gpt-5",
-                name: "GPT 5",
-                owned_by: "openai",
-                type: "language",
-                tags: [],
-              },
-            ],
-          }),
-          { status: 200 }
-        )
-      )
-    );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const r1 = await fetchGatewayModels();
-    const r2 = await fetchGatewayModels();
-
-    expect(r1).toBe(r2);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  test("pricing is omitted when all pricing fields are empty", async () => {
-    mockGateway([
-      {
-        id: "openai/gpt-5",
-        name: "GPT 5",
-        owned_by: "openai",
-        type: "language",
-        tags: [],
-        pricing: {},
-      },
-    ]);
-
-    const result = await fetchGatewayModels();
-    expect(result.text[0].pricing).toBeUndefined();
-  });
-
-  test("surfaces context window, max tokens, released, and tags", async () => {
-    mockGateway([
-      {
-        id: "anthropic/claude-opus-4.6",
-        name: "Claude Opus 4.6",
-        owned_by: "anthropic",
-        type: "language",
-        tags: ["reasoning", "tool-use"],
-        context_window: 1_000_000,
-        max_tokens: 128_000,
-        released: 1_770_249_600,
-        pricing: {
-          input: "0.000005",
-          output: "0.000025",
-          input_cache_read: "0.0000005",
-          input_cache_write: "0.00000625",
-          web_search: "10",
-        },
-      },
-    ]);
-
-    const result = await fetchGatewayModels();
-    const entry = result.text[0];
-
-    expect(entry.contextWindow).toBe(1_000_000);
-    expect(entry.maxTokens).toBe(128_000);
-    expect(entry.released).toBe(1_770_249_600);
-    expect(entry.tags).toEqual(["reasoning", "tool-use"]);
-    expect(entry.pricing).toEqual({
-      input: "0.000005",
-      output: "0.000025",
-      input_cache_read: "0.0000005",
-      input_cache_write: "0.00000625",
-      web_search: "10",
+    const result = await fetchModelCatalog("omlx", {
+      cache: false,
+      fetch: fetchMock,
     });
-  });
 
-  test("falls back to parsing creator from id when owned_by is absent", async () => {
-    mockGateway([
-      {
-        id: "openai/gpt-5",
-        name: "GPT 5",
-        type: "language",
-        tags: [],
-      },
+    expect(request?.url).toBe("http://127.0.0.1:9000/v1/models");
+    expect(request?.headers.get("authorization")).toBe("Bearer local-secret");
+    expect(result.text).toEqual([
+      targetEntry("qwen3:thinking", "local", "text"),
     ]);
-
-    const result = await fetchGatewayModels();
-    expect(result.text[0].creator).toBe("openai");
   });
-});
 
-describe("fetchModelEndpoints", () => {
-  test("returns endpoint data for a model", async () => {
-    const data = {
-      id: "anthropic/claude-opus-4.6",
-      name: "Claude Opus 4.6",
-      released: 1_770_249_600,
-      endpoints: [
+  test("does not cache a partial OpenRouter catalog", async () => {
+    const fetchMock = mockFetch((url) => {
+      if (url.endsWith("/images/models")) throw new Error("image catalog down");
+      if (url.endsWith("/videos/models")) return [];
+      return [
         {
-          provider_name: "anthropic",
-          context_length: 1_000_000,
-          max_completion_tokens: 128_000,
-          pricing: { prompt: "0.000005", completion: "0.000025" },
-          uptime_last_1d: 99.99,
-          latency_last_1h: { p50: 1433.5, p95: 1936.2 },
-          throughput_last_1h: { p50: 48.5, p95: 49.9 },
+          id: "remote/text-only",
+          architecture: { output_modalities: ["text"] },
         },
-      ],
-    };
-    const fetchMock = mock((_url: string) =>
-      Promise.resolve(new Response(JSON.stringify({ data }), { status: 200 }))
+      ];
+    });
+
+    const result = await fetchModelCatalog("openrouter", {
+      cache: false,
+      fetch: fetchMock,
+    });
+
+    expect(result.lookup.some((model) => model.id === "remote/text-only")).toBe(
+      false
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const result = await fetchModelEndpoints("anthropic/claude-opus-4.6");
-
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://ai-gateway.vercel.sh/v1/models/anthropic/claude-opus-4.6/endpoints"
+    expect(result.lookup.some((model) => model.id === "openai/gpt-5.5")).toBe(
+      true
     );
-    expect(result?.id).toBe("anthropic/claude-opus-4.6");
-    expect(result?.endpoints).toHaveLength(1);
-    expect(result?.endpoints[0].provider_name).toBe("anthropic");
-    expect(result?.endpoints[0].latency_last_1h?.p50).toBe(1433.5);
   });
 
-  test("defaults endpoints to an empty array", async () => {
-    globalThis.fetch = mock(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ data: { id: "openai/gpt-5" } }), {
-          status: 200,
-        })
-      )
-    ) as unknown as typeof fetch;
+  test("falls back to built-in models when discovery fails", async () => {
+    const result = await fetchModelCatalog("openrouter", {
+      cache: false,
+      fetch: (() =>
+        Promise.reject(new Error("offline"))) as unknown as typeof fetch,
+    });
 
-    const result = await fetchModelEndpoints("openai/gpt-5");
-    expect(result?.endpoints).toEqual([]);
+    expect(result.text.some((model) => model.id === "openai/gpt-5.5")).toBe(
+      true
+    );
+    expect(
+      result.image.some((model) => model.id === "openai/gpt-image-2")
+    ).toBe(true);
   });
 
-  test("returns null on network error", async () => {
-    mockGatewayError();
-    expect(await fetchModelEndpoints("openai/gpt-5")).toBeNull();
-  });
+  test("reuses the local cache", async () => {
+    const cacheDir = join(
+      "/tmp",
+      `ai-cli-model-test-${process.pid}-${Date.now()}`
+    );
+    process.env.AI_CLI_CACHE_DIR = cacheDir;
+    let calls = 0;
+    const fetchMock = mockFetch(() => {
+      calls++;
+      return {
+        openai: {
+          models: {
+            "gpt-5.5": { modalities: { output: ["text"] } },
+          },
+        },
+      };
+    });
 
-  test("returns null on non-200 response", async () => {
-    globalThis.fetch = mock(() =>
-      Promise.resolve(new Response("Not Found", { status: 404 }))
-    ) as unknown as typeof fetch;
-    expect(await fetchModelEndpoints("openai/nope")).toBeNull();
+    await fetchModelCatalog("openai", { fetch: fetchMock, now: 1_000 });
+    resetModelCache();
+    await fetchModelCatalog("openai", { fetch: fetchMock, now: 2_000 });
+
+    expect(calls).toBe(1);
+    await rm(cacheDir, { recursive: true, force: true });
   });
 });
+
+function targetEntry(
+  id: string,
+  creator: string,
+  capability: "text"
+): ModelEntry {
+  return { id, creator, capabilities: [capability] };
+}
+
+function mockFetch(responseForUrl: (url: string) => unknown): typeof fetch {
+  return (async (input: string | URL | Request) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return new Response(JSON.stringify({ data: responseForUrl(url) }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+}

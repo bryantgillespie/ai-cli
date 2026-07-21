@@ -16,8 +16,11 @@ ai image "edit this" < photo.png
 ### Options
 
 <Properties>
+  <Property name="-P, --provider" type="openrouter | openai | fal">
+    Default provider for unqualified models.
+  </Property>
   <Property name="-m, --model" type="string">
-    Model ID. Comma-separated for multi-model.
+    Model ID. Prefix with `provider:` to mix providers.
   </Property>
   <Property name="-o, --output" type="path">
     Output file path or directory.
@@ -35,11 +38,12 @@ ai image "edit this" < photo.png
   <Property name="--aspect-ratio" type="W:H">
     Aspect ratio (e.g. `16:9`).
   </Property>
-  <Property name="--quality" type="standard | hd">
-    Quality level (OpenAI models only).
+  <Property name="--quality" type="string">
+    Provider- and model-specific quality level. Supported by OpenAI and
+    OpenRouter targets.
   </Property>
   <Property name="--style" type="vivid | natural">
-    Style (OpenAI models only).
+    Style for compatible OpenAI models.
   </Property>
   <Property name="--no-preview" type="boolean">
     Disable inline image preview.
@@ -66,8 +70,11 @@ ai image "a dragon" | ai video "animate this"
 ### Options
 
 <Properties>
+  <Property name="-P, --provider" type="openrouter | fal">
+    Default provider for unqualified models.
+  </Property>
   <Property name="-m, --model" type="string">
-    Model ID. Comma-separated for multi-model.
+    Model ID. Prefix with `provider:` to mix providers.
   </Property>
   <Property name="-o, --output" type="path">
     Output file path or directory.
@@ -109,8 +116,11 @@ ai text "summarize this" < notes.txt
 ### Options
 
 <Properties>
+  <Property name="-P, --provider" type="openrouter | openai | ollama | omlx">
+    Default provider for unqualified models.
+  </Property>
   <Property name="-m, --model" type="string">
-    Model ID (`creator/model`). Comma-separated for multi-model.
+    Model ID. Prefix with `provider:` to mix cloud and local providers.
   </Property>
   <Property name="-o, --output" type="path">
     Output file path or directory.
@@ -148,22 +158,25 @@ ai text "summarize this" < notes.txt
 Generate speech from text or transcribe audio to text.
 
 ```bash
-ai audio speak "Hello from AI Gateway"
-ai audio transcribe recording.mp3
-cat voice-note.mp3 | ai audio transcribe -o transcript.txt
+ai audio speak -P openai "Hello from ai-cli"
+ai audio transcribe -P openai recording.mp3
+cat voice-note.mp3 | ai audio transcribe -P openai -o transcript.txt
 ```
 
 ### audio speak
 
 <Properties>
+  <Property name="-P, --provider" type="openai | fal">
+    Provider for this request.
+  </Property>
   <Property name="-m, --model" type="string">
-    Speech model ID. Comma-separated for multi-model.
+    Speech model ID. Prefix with `provider:` to mix providers.
   </Property>
   <Property name="-o, --output" type="path">
     Output file path or directory.
   </Property>
   <Property name="-f, --format" type="string" default="mp3">
-    Audio output format.
+    Audio output format. FAL speech targets support MP3 only.
   </Property>
   <Property name="--voice" type="string">
     Voice to use for speech generation.
@@ -200,15 +213,18 @@ cat voice-note.mp3 | ai audio transcribe -o transcript.txt
 `audio speak` accepts text from an argument or stdin:
 
 ```bash
-echo "Ship the changelog" | ai audio speak -o changelog.mp3
-cat announcement.txt | ai audio speak --format wav -o announcement.wav
+echo "Ship the changelog" | ai audio speak -P openai -o changelog.mp3
+cat announcement.txt | ai audio speak -P openai --format wav -o announcement.wav
 ```
 
 ### audio transcribe
 
 <Properties>
+  <Property name="-P, --provider" type="openai | fal">
+    Provider for this request.
+  </Property>
   <Property name="-m, --model" type="string">
-    Transcription model ID. Comma-separated for multi-model.
+    Transcription model ID. Prefix with `provider:` to mix providers.
   </Property>
   <Property name="-o, --output" type="path">
     Output file path or directory.
@@ -233,16 +249,16 @@ cat announcement.txt | ai audio speak --format wav -o announcement.wav
 `audio transcribe` accepts a local path, `file://` URL, `http(s)://` URL, or piped audio:
 
 ```bash
-ai audio transcribe meeting.mp3
-ai audio transcribe https://example.com/call.wav
-cat recording.mp3 | ai audio transcribe
+ai audio transcribe -P openai meeting.mp3
+ai audio transcribe -P openai https://example.com/call.wav
+cat recording.mp3 | ai audio transcribe -P openai
 ```
 
 ---
 
 ## models
 
-List available models from the AI Gateway, or show detailed info for one model.
+List available models for a provider, or show detailed info for one model.
 
 ```bash
 ai models
@@ -256,16 +272,25 @@ ai models anthropic/claude-opus-4.6 --json
 
 <Properties>
   <Property name="[model]" type="string">
-    Model ID or short name. Shows a detail card with context window, max
-    output, pricing (input, output, cache read/write, web search), release
-    date and per-provider latency, throughput and uptime.
+    Model ID or unique short name. Shows context window, max output, pricing,
+    and release date.
   </Property>
 </Properties>
 
 ### Options
 
 <Properties>
-  <Property name="--type" type="text | image | video | audio | speech | transcription">
+  <Property
+    name="-P, --provider"
+    type="openrouter | openai | fal | ollama | omlx | all"
+  >
+    Provider catalog to list. Use `all` for provider-qualified entries from
+    every catalog.
+  </Property>
+  <Property
+    name="--type"
+    type="text | image | video | audio | speech | transcription"
+  >
     Filter by modality (list mode only).
   </Property>
   <Property name="--creator" type="string">
@@ -276,7 +301,7 @@ ai models anthropic/claude-opus-4.6 --json
   </Property>
 </Properties>
 
-Models are fetched live from the AI Gateway.
+OpenRouter models are fetched from OpenRouter. Direct OpenAI metadata comes from models.dev. Ollama and OMLX use their local `/v1/models` endpoints. Cloud catalogs are cached locally for one hour.
 
 ---
 
@@ -284,20 +309,20 @@ Models are fetched live from the AI Gateway.
 
 Requests that exceed the per-command timeout are aborted automatically:
 
-| Command | Timeout |
-| --- | --- |
-| `text` | 120 seconds |
-| `image` | 300 seconds |
-| `video` | 300 seconds |
-| `audio speak` | 120 seconds |
+| Command            | Timeout     |
+| ------------------ | ----------- |
+| `text`             | 120 seconds |
+| `image`            | 300 seconds |
+| `video`            | 300 seconds |
+| `audio speak`      | 120 seconds |
 | `audio transcribe` | 120 seconds |
 
 Image and video generation use a longer timeout because models typically need more processing time.
 
 ## Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Success |
-| `1` | All generations failed |
-| `2` | Partial failure (some succeeded, some failed) |
+| Code | Meaning                                       |
+| ---- | --------------------------------------------- |
+| `0`  | Success                                       |
+| `1`  | All generations failed                        |
+| `2`  | Partial failure (some succeeded, some failed) |

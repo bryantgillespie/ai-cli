@@ -18,7 +18,7 @@ const items: readonly item[] = [
   {
     id: "003",
     title: "Live model discovery",
-    body: "Models are fetched directly from the AI Gateway — no hardcoded lists to maintain. Use short names or full provider/model IDs.",
+    body: "OpenRouter models are fetched live. Direct metadata comes from models.dev, Ollama, and OMLX.",
   },
   {
     id: "004",

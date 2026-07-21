@@ -7,63 +7,81 @@ order: 8
 ## Missing API key
 
 ```
-Error: No API key found
+Error: provider "openrouter" requires OPENROUTER_API_KEY
 ```
 
-Set one of the following environment variables:
+Set the key for the selected provider:
 
 ```bash
-export AI_GATEWAY_API_KEY="your-key"   # recommended — access to all models
-export OPENAI_API_KEY="sk-..."         # OpenAI models only
+export OPENROUTER_API_KEY="your-key"
+export OPENAI_API_KEY="your-key"
+export FAL_API_KEY="your-key"
 ```
 
-Add the export to your shell profile (`~/.zshrc`, `~/.bashrc`) to persist across sessions.
+Use `-P openai` or `-P fal` when selecting a direct provider. Add exports to your shell profile (`~/.zshrc`, `~/.bashrc`) to persist them.
+
+## Unsupported capability
+
+Providers support different command types. OpenRouter handles text, image, and video. OpenAI handles text, image, speech, and transcription. FAL handles image, video, speech, and transcription. Ollama and OMLX handle text, including image input when the selected model supports vision.
+
+Choose a supported provider explicitly:
+
+```bash
+ai audio speak -P openai "hello"
+ai video -P fal "a spinning triangle"
+```
+
+## Local provider unavailable
+
+Confirm the server is running and list its models directly:
+
+```bash
+curl http://127.0.0.1:11434/v1/models
+curl http://127.0.0.1:8000/v1/models
+```
+
+Set `OLLAMA_BASE_URL` or `OMLX_BASE_URL` when using another address. If the local endpoint requires authentication, set `OLLAMA_API_KEY` or `OMLX_API_KEY`.
+
+Local providers require an explicit model:
+
+```bash
+ai text -P ollama -m qwen3:latest "hello"
+```
+
+## Model catalog unavailable
+
+Catalog requests time out after five seconds and fall back to the last local cache or built-in defaults. Generation with an explicit model ID does not fetch a catalog.
+
+Check [OpenRouter status](https://status.openrouter.ai/) for OpenRouter discovery problems. Direct OpenAI metadata is supplied by [models.dev](https://models.dev/).
 
 ## Timeout errors
 
 Requests are aborted if they exceed the per-command timeout:
 
-| Command | Timeout |
-| --- | --- |
-| `text` | 120 seconds |
-| `image` | 300 seconds |
-| `video` | 300 seconds |
-| `audio speak` | 120 seconds |
+| Command            | Timeout     |
+| ------------------ | ----------- |
+| `text`             | 120 seconds |
+| `image`            | 300 seconds |
+| `video`            | 300 seconds |
+| `audio speak`      | 120 seconds |
 | `audio transcribe` | 120 seconds |
 
-If you're consistently hitting timeouts, try a faster model variant (e.g. `bytedance/seedance-2.0-fast` instead of `bytedance/seedance-2.0`).
+If you're consistently hitting timeouts, try a faster model variant.
 
 ## `--quality` / `--style` warning
 
-```
-Warning: --quality and --style only apply to OpenAI models
-```
-
-The `--quality` and `--style` flags are OpenAI-specific provider options. They're silently ignored by other providers. Remove these flags when using non-OpenAI image models.
+`--style` applies only to direct OpenAI image requests. `--quality` applies to OpenAI and OpenRouter image requests, but not FAL.
 
 ## Version and upgrades
 
-Check your installed version:
-
 ```bash
 ai --version
-```
-
-Upgrade to the latest release:
-
-```bash
 npm update -g ai-cli
 ```
 
-## Gateway unreachable
-
-If the AI Gateway is unreachable, the `models` command will return an empty list and short-name resolution will be unavailable. Use fully-qualified model IDs (`provider/model-name`) to bypass model discovery. Generation commands will still work if you specify the full model ID with `-m`.
-
-Check your network connection and verify the gateway status at [vercel.com/status](https://www.vercel.com/status).
-
 ## No output / empty response
 
-If a command exits with code 0 but produces no visible output, it likely wrote to a file. Check stderr for the "Saved to" message, or use `--json` to see structured metadata including the output path:
+If a command exits with code 0 but produces no visible output, it likely wrote to a file. Check stderr for the "Saved to" message, or use `--json` to see structured metadata:
 
 ```bash
 ai image "a sunset" --json

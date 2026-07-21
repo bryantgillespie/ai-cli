@@ -1,4 +1,4 @@
-import { generateImage, generateText, gateway, type JSONValue } from "ai";
+import { generateImage } from "ai";
 import type { Command } from "commander";
 
 import {
@@ -7,8 +7,14 @@ import {
   type ImageReference,
 } from "../lib/image-references.js";
 import { buildJobs, runJobs } from "../lib/jobs.js";
-import { fetchGatewayModels, resolveModels } from "../lib/models.js";
+import { resolveModels } from "../lib/models.js";
 import { parsePositiveInt, parseSize, parseAspectRatio } from "../lib/parse.js";
+import {
+  createProviderResolver,
+  getImageModel,
+  resolveProviderId,
+  type ProviderId,
+} from "../lib/providers.js";
 import { responseIdFromHeaders } from "../lib/response-id.js";
 import { readStdin } from "../lib/stdin.js";
 
@@ -16,6 +22,7 @@ const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 interface ImageOptions {
+  provider?: string;
   model?: string;
   output?: string;
   image?: string[];
@@ -36,8 +43,12 @@ export function registerImageCommand(program: Command) {
     .description("Generate an image from a prompt")
     .argument("[prompt]", "The prompt to generate an image from")
     .option(
+      "-P, --provider <provider>",
+      "Default provider: openrouter, openai, fal (default: openrouter)"
+    )
+    .option(
       "-m, --model <model>",
-      "Model ID (creator/model-name), comma-separated for multi-model"
+      "Model ID; prefix with provider: to mix providers"
     )
     .option("-o, --output <path>", "Output file path or directory")
     .option(
@@ -49,8 +60,8 @@ export function registerImageCommand(program: Command) {
     .option("-n, --count <n>", "Number of images per model (default: 1)")
     .option("--size <WxH>", "Image size (e.g. 1024x1024)")
     .option("--aspect-ratio <W:H>", "Aspect ratio (e.g. 16:9)")
-    .option("--quality <level>", "Quality (standard, hd)")
-    .option("--style <style>", "Style (e.g. vivid, natural)")
+    .option("--quality <level>", "Provider/model-specific quality level")
+    .option("--style <style>", "OpenAI model style (e.g. vivid, natural)")
     .option("-q, --quiet", "Suppress progress output")
     .option("--json", "Output metadata as JSON")
     .option(
@@ -93,8 +104,9 @@ export function registerImageCommand(program: Command) {
         imagePrompt = prompt!;
       }
 
-      const gatewayModels = await fetchGatewayModels();
-      const models = resolveModels("image", opts.model, gatewayModels.image);
+      const defaultProvider = resolveProviderId(opts.provider);
+      const models = resolveModels(defaultProvider, "image", opts.model);
+      const providerFor = createProviderResolver();
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
@@ -102,23 +114,14 @@ export function registerImageCommand(program: Command) {
       const aspectRatio = opts.aspectRatio
         ? parseAspectRatio(opts.aspectRatio)
         : undefined;
-      const provOpts = buildProviderOptions(opts);
-
-      if (
-        (opts.quality || opts.style) &&
-        models.every((m) => !m.startsWith("openai/"))
-      ) {
+      if (opts.style && models.some((target) => target.provider !== "openai")) {
         process.stderr.write(
-          "Warning: --quality and --style only apply to OpenAI models\n"
+          "Warning: --style only applies to OpenAI targets\n"
         );
       }
-
-      if (
-        opts.size &&
-        models.some((m) => gatewayModels.languageImageModelIds.has(m))
-      ) {
+      if (opts.quality && models.some((target) => target.provider === "fal")) {
         process.stderr.write(
-          "Warning: --size is not supported by language image models; use --aspect-ratio instead\n"
+          "Warning: --quality is not supported by FAL targets\n"
         );
       }
 
@@ -126,75 +129,20 @@ export function registerImageCommand(program: Command) {
 
       const { total, failed } = await runJobs(
         jobs,
-        async (modelId) => {
+        async (target) => {
           const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
-
-          if (gatewayModels.languageImageModelIds.has(modelId)) {
-            const messageContent: Array<
-              | { type: "text"; text: string }
-              | { type: "image"; image: ImageReference }
-            > = [];
-            if (typeof imagePrompt === "string") {
-              messageContent.push({ type: "text", text: imagePrompt });
-            } else {
-              for (const img of imagePrompt.images) {
-                messageContent.push({ type: "image", image: img });
-              }
-              if (imagePrompt.text) {
-                messageContent.push({
-                  type: "text",
-                  text: imagePrompt.text,
-                });
-              } else {
-                messageContent.push({
-                  type: "text",
-                  text: "Generate an image",
-                });
-              }
-            }
-            const creator = gatewayModels.all.find(
-              (m) => m.id === modelId
-            )?.creator;
-            const result = await generateText({
-              headers: {
-                "http-referer": "https://github.com/vercel-labs/ai-cli",
-                "x-title": "ai-cli",
-              },
-              model: gateway(modelId),
-              messages: [{ role: "user", content: messageContent }],
-              abortSignal: abort,
-              providerOptions: languageImageProviderOptions(
-                creator,
-                aspectRatio
-              ),
-            });
-            const imageFile = result.files?.find((f) =>
-              f.mediaType.startsWith("image/")
-            );
-            if (!imageFile) {
-              throw new Error(
-                `Model ${modelId} did not return an image in the response`
-              );
-            }
-            return {
-              data: Buffer.from(imageFile.uint8Array),
-              id: result.response.id,
-            };
-          }
-
+          const providerOptions = imageProviderOptions(target.provider, opts);
           const result = await generateImage({
-            headers: {
-              "http-referer": "https://github.com/vercel-labs/ai-cli",
-              "x-title": "ai-cli",
-            },
-            model: gateway.image(modelId),
+            model: getImageModel(providerFor(target.provider), target.modelId),
             prompt: imagePrompt,
             abortSignal: abort,
             n: 1,
             size,
             aspectRatio,
             providerOptions:
-              Object.keys(provOpts).length > 0 ? provOpts : undefined,
+              Object.keys(providerOptions).length > 0
+                ? providerOptions
+                : undefined,
           });
           return {
             data: Buffer.from(result.image.uint8Array),
@@ -218,29 +166,20 @@ export function registerImageCommand(program: Command) {
     });
 }
 
-export function languageImageProviderOptions(
-  creator: string | undefined,
-  aspectRatio?: `${number}:${number}`
-): { google: Record<string, JSONValue> } | undefined {
-  if (creator !== "google") return undefined;
-  return {
-    google: {
-      responseModalities: ["IMAGE", "TEXT"],
-      // Gemini image models don't support `size`; aspect ratio goes through
-      // imageConfig and defaults to 1:1 when unset.
-      ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}),
-    },
-  };
-}
-
-function buildProviderOptions(
+export function imageProviderOptions(
+  provider: ProviderId,
   opts: ImageOptions
 ): Record<string, Record<string, string>> {
-  const providerOptions: Record<string, Record<string, string>> = {};
-  if (opts.quality || opts.style) {
-    providerOptions.openai = {};
-    if (opts.quality) providerOptions.openai.quality = opts.quality;
-    if (opts.style) providerOptions.openai.style = opts.style;
+  if (provider === "openai" && (opts.quality || opts.style)) {
+    return {
+      openai: {
+        ...(opts.quality ? { quality: opts.quality } : {}),
+        ...(opts.style ? { style: opts.style } : {}),
+      },
+    };
   }
-  return providerOptions;
+  if (provider === "openrouter" && opts.quality) {
+    return { openrouter: { quality: opts.quality } };
+  }
+  return {};
 }

@@ -52,8 +52,8 @@ cat scene.png | ai video "zoom out slowly"
 `audio speak` reads stdin as text. `audio transcribe` reads stdin as binary audio:
 
 ```bash
-echo "Ship the changelog" | ai audio speak -o changelog.mp3
-cat recording.mp3 | ai audio transcribe -o transcript.txt
+echo "Ship the changelog" | ai audio speak -P openai -o changelog.mp3
+cat recording.mp3 | ai audio transcribe -P openai -o transcript.txt
 ```
 
 ## Stdout
@@ -68,7 +68,7 @@ Saves to a file and prints the path to stderr:
 ai text "hello"         # → saves <id>.md, prints "Saved to /path/<id>.md"
 ai image "a cat"        # → saves <id>.png
 ai video "ocean"        # → saves <id>.mp4
-ai audio speak "hello"  # → saves <id>.mp3
+ai audio speak -P openai "hello"  # → saves <id>.mp3
 ```
 
 ### Piped (non-TTY)
@@ -79,7 +79,7 @@ Writes raw output directly to stdout for composability:
 ai text "hello" | pbcopy                    # copy to clipboard
 ai image "a dragon" | ai video "animate"    # chain image → video
 ai text "hello" > response.md              # redirect to file
-ai audio speak "hello" > speech.mp3        # redirect audio bytes
+ai audio speak -P openai "hello" > speech.mp3        # redirect audio bytes
 ```
 
 ## Output path
@@ -89,7 +89,7 @@ Control where files are saved with `-o`:
 ```bash
 ai image "a sunset" -o sunset.png          # specific file
 ai image "a sunset" -o ./renders/          # directory (auto-names files)
-ai audio transcribe call.mp3 -o call.txt   # transcript file
+ai audio transcribe -P openai call.mp3 -o call.txt   # transcript file
 ```
 
 When `-o` points to a directory, files use response IDs when available and random 8-character names otherwise.
@@ -126,5 +126,6 @@ ai image "a sunset" --json
 ```
 
 <Callout type="tip">
-  The `--json` flag is useful for scripts and CI pipelines that need to know where files were saved and whether generation succeeded.
+  The `--json` flag is useful for scripts and CI pipelines that need to know
+  where files were saved and whether generation succeeded.
 </Callout>

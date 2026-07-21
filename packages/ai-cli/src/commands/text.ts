@@ -1,6 +1,5 @@
 import {
   generateText,
-  gateway,
   type ImagePart,
   type ModelMessage,
   type TextPart,
@@ -14,15 +13,21 @@ import {
   type ImageReference,
 } from "../lib/image-references.js";
 import { buildJobs, runJobs } from "../lib/jobs.js";
-import { fetchGatewayModels, resolveModels } from "../lib/models.js";
+import { resolveModels } from "../lib/models.js";
 import type { OutputFormat } from "../lib/output.js";
 import { parsePositiveInt, parseTemperature } from "../lib/parse.js";
+import {
+  createProviderResolver,
+  getLanguageModel,
+  resolveProviderId,
+} from "../lib/providers.js";
 import { readStdin, stdinAsText } from "../lib/stdin.js";
 
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 interface TextOptions {
+  provider?: string;
   model?: string;
   output?: string;
   format?: string;
@@ -50,8 +55,12 @@ export function registerTextCommand(program: Command) {
     .description("Generate text from a prompt")
     .argument("[prompt]", "The prompt to generate text from")
     .option(
+      "-P, --provider <provider>",
+      "Default provider: openrouter, openai, ollama, omlx (default: openrouter)"
+    )
+    .option(
       "-m, --model <model>",
-      "Model ID (creator/model-name), comma-separated for multi-model"
+      "Model ID; prefix with provider: to mix providers"
     )
     .option("-o, --output <path>", "Output file path or directory")
     .option("-f, --format <fmt>", "Output format: md, txt (default: md)")
@@ -101,8 +110,9 @@ export function registerTextCommand(program: Command) {
       const textPrompt = buildTextPrompt({ prompt, stdinText, images });
 
       const format = resolveFormat(opts.format);
-      const gatewayModels = await fetchGatewayModels();
-      const models = resolveModels("text", opts.model, gatewayModels.text);
+      const defaultProvider = resolveProviderId(opts.provider);
+      const models = resolveModels(defaultProvider, "text", opts.model);
+      const providerFor = createProviderResolver();
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
@@ -117,19 +127,19 @@ export function registerTextCommand(program: Command) {
 
       const { total, failed } = await runJobs(
         jobs,
-        async (modelId) => {
+        async (target) => {
           const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
           const result = await generateText({
-            headers: {
-              "http-referer": "https://github.com/vercel-labs/ai-cli",
-              "x-title": "ai-cli",
-            },
-            model: gateway(modelId),
+            model: getLanguageModel(
+              providerFor(target.provider),
+              target.modelId
+            ),
             prompt: textPrompt,
             system: opts.system,
             maxOutputTokens: maxTokens,
             temperature,
             abortSignal: abort,
+            telemetry: { isEnabled: false },
           });
           return { data: result.text, id: result.response.id };
         },

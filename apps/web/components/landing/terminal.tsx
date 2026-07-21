@@ -30,10 +30,19 @@ const scenes: readonly scene[] = [
   {
     name: "video",
     data: [
-      { tone: "input", text: '$ ai image "a dragon" | ai video "animate this"' },
+      {
+        tone: "input",
+        text: '$ ai image "a dragon" | ai video "animate this"',
+      },
       { tone: "dim", text: "" },
-      { tone: "dim", text: "Generating image with openai/gpt-image-2" },
-      { tone: "ok", text: "Generating video with bytedance/seedance-2.0" },
+      {
+        tone: "dim",
+        text: "Generating image with openrouter:openai/gpt-image-2",
+      },
+      {
+        tone: "ok",
+        text: "Generating video with openrouter:bytedance/seedance-2.0",
+      },
       { tone: "plain", text: "" },
       { tone: "ok", text: "Saved to /Users/you/resp_video.mp4 (12.4s)" },
     ],
@@ -41,9 +50,12 @@ const scenes: readonly scene[] = [
   {
     name: "text",
     data: [
-      { tone: "input", text: "$ git diff | ai text \"explain these changes\"" },
+      { tone: "input", text: '$ git diff | ai text "explain these changes"' },
       { tone: "dim", text: "" },
-      { tone: "dim", text: "Generating text with openai/gpt-5.5" },
+      {
+        tone: "dim",
+        text: "Generating text with openrouter:openai/gpt-5.5",
+      },
       { tone: "plain", text: "" },
       { tone: "plain", text: "These changes refactor the auth module:" },
       { tone: "plain", text: "" },
@@ -57,14 +69,17 @@ const scenes: readonly scene[] = [
   {
     name: "audio",
     data: [
-      { tone: "input", text: '$ ai audio speak "Thanks for trying ai-cli"' },
+      {
+        tone: "input",
+        text: '$ ai audio speak -P openai "Thanks for trying ai-cli"',
+      },
       { tone: "dim", text: "" },
-      { tone: "dim", text: "Generating audio with openai/tts-1" },
+      { tone: "dim", text: "Generating audio with openai:tts-1" },
       { tone: "plain", text: "" },
       { tone: "ok", text: "Saved to /Users/you/resp_8j3k2m1n.mp3 (1.8s)" },
       { tone: "muted", text: "Playing audio  ▁▂▃▅▇▆▄▃▂▁" },
       { tone: "plain", text: "" },
-      { tone: "input", text: "$ ai audio transcribe meeting.mp3" },
+      { tone: "input", text: "$ ai audio transcribe -P openai meeting.mp3" },
       { tone: "ok", text: "Saved to /Users/you/resp_transcript.txt" },
     ],
   },

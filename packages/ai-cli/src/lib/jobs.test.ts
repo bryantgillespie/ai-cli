@@ -4,6 +4,15 @@ import { tmpdir } from "os";
 import { basename, join } from "path";
 
 import { buildJobs, runJobs } from "./jobs.js";
+import type { ModelTarget } from "./models.js";
+
+function targets(...modelIds: string[]): ModelTarget[] {
+  return modelIds.map((modelId) => ({
+    provider: "openrouter",
+    modelId,
+    reference: `openrouter:${modelId}`,
+  }));
+}
 
 async function withTempCwd<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const cwd = process.cwd();
@@ -44,12 +53,51 @@ async function captureStdout(fn: () => Promise<void>): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+describe("buildJobs", () => {
+  test("preserves provider routing for concurrent model targets", () => {
+    const jobs = buildJobs(
+      [
+        {
+          provider: "openrouter",
+          modelId: "anthropic/claude-sonnet-4",
+          reference: "openrouter:anthropic/claude-sonnet-4",
+        },
+        {
+          provider: "ollama",
+          modelId: "qwen3:latest",
+          reference: "ollama:qwen3:latest",
+        },
+      ],
+      1
+    );
+
+    expect(
+      jobs.map(({ provider, modelId, reference }) => ({
+        provider,
+        modelId,
+        reference,
+      }))
+    ).toEqual([
+      {
+        provider: "openrouter",
+        modelId: "anthropic/claude-sonnet-4",
+        reference: "openrouter:anthropic/claude-sonnet-4",
+      },
+      {
+        provider: "ollama",
+        modelId: "qwen3:latest",
+        reference: "ollama:qwen3:latest",
+      },
+    ]);
+  });
+});
+
 describe("runJobs", () => {
   test("json mode writes single binary output to a file and keeps stdout JSON-only", async () => {
     await withTempCwd(async () => {
       const stdout = await captureStdout(async () => {
         await runJobs(
-          buildJobs(["openai/tts-1"], 1),
+          buildJobs(targets("openai/tts-1"), 1),
           async () => ({
             data: Buffer.from([1, 2, 3]),
             id: "speech_123",
@@ -82,7 +130,7 @@ describe("runJobs", () => {
     await withTempCwd(async () => {
       const stdout = await captureStdout(async () => {
         await runJobs(
-          buildJobs(["openai/tts-1"], 2),
+          buildJobs(targets("openai/tts-1"), 2),
           async () => ({
             data: Buffer.from([4, 5, 6]),
             id: "speech_456",
@@ -124,14 +172,14 @@ describe("runJobs", () => {
 
       const stdout = await captureStdout(async () => {
         await runJobs(
-          buildJobs(["slow", "medium", "fast"], 1),
-          async (modelId) => {
+          buildJobs(targets("slow", "medium", "fast"), 1),
+          async (target) => {
             await new Promise((resolve) =>
-              setTimeout(resolve, delays[modelId] ?? 0)
+              setTimeout(resolve, delays[target.modelId] ?? 0)
             );
             return {
-              data: modelId,
-              id: modelId,
+              data: target.modelId,
+              id: target.modelId,
             };
           },
           {
@@ -145,10 +193,19 @@ describe("runJobs", () => {
       });
 
       const meta = JSON.parse(stdout.toString("utf8")) as {
-        results: Array<{ index: number; model: string }>;
+        results: Array<{
+          index: number;
+          provider: string;
+          model: string;
+        }>;
       };
 
       expect(meta.results.map((r) => r.index)).toEqual([1, 2, 3]);
+      expect(meta.results.map((r) => r.provider)).toEqual([
+        "openrouter",
+        "openrouter",
+        "openrouter",
+      ]);
       expect(meta.results.map((r) => r.model)).toEqual([
         "slow",
         "medium",
@@ -162,14 +219,14 @@ describe("runJobs", () => {
       const seen: Array<{ model: string; file: string | null }> = [];
 
       await runJobs(
-        buildJobs(["slow", "fast"], 1),
-        async (modelId) => {
-          if (modelId === "slow") {
+        buildJobs(targets("slow", "fast"), 1),
+        async (target) => {
+          if (target.modelId === "slow") {
             await new Promise((resolve) => setTimeout(resolve, 20));
           }
           return {
-            data: modelId,
-            id: modelId,
+            data: target.modelId,
+            id: target.modelId,
           };
         },
         {

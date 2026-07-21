@@ -11,7 +11,10 @@ interface row {
 }
 
 const multimodelrows: readonly row[] = [
-  { tone: "cmd", text: '$ ai image "a sunset" -m "gpt-image-2,flux-2-pro"' },
+  {
+    tone: "cmd",
+    text: '$ ai image "a sunset" -m "openai/gpt-image-2,bfl/flux-2-pro"',
+  },
   { tone: "dim", text: "" },
   { tone: "code", text: "Saved to /Users/you/resp_img_a-1.png (3.2s)" },
   { tone: "code", text: "Saved to /Users/you/resp_img_b-2.png (4.7s)" },
@@ -29,24 +32,25 @@ const pipingrows: readonly row[] = [
   { tone: "cmd", text: '$ ai image "a dragon" | ai video "animate this"' },
   { tone: "code", text: "Saved to /Users/you/resp_video.mp4" },
   { tone: "dim", text: "" },
-  { tone: "cmd", text: '$ echo "Ship the changelog" | ai audio speak' },
+  {
+    tone: "cmd",
+    text: '$ echo "Ship the changelog" | ai audio speak -P openai',
+  },
   { tone: "code", text: "Saved to /Users/you/resp_speech.mp3" },
 ];
 
 const modelrows: readonly row[] = [
-  { tone: "cmd", text: "$ ai models --type audio" },
+  { tone: "cmd", text: "$ ai models -P openai --type audio" },
   { tone: "dim", text: "" },
-  { tone: "dim", text: "Speech models (8):" },
+  { tone: "dim", text: "Speech models (1):" },
   { tone: "dim", text: "" },
   { tone: "dim", text: "  openai" },
   { tone: "code", text: "    tts-1" },
-  { tone: "code", text: "    gpt-4o-mini-tts" },
   { tone: "dim", text: "" },
-  { tone: "dim", text: "Transcription models (4):" },
+  { tone: "dim", text: "Transcription models (1):" },
   { tone: "dim", text: "" },
   { tone: "dim", text: "  openai" },
   { tone: "code", text: "    whisper-1" },
-  { tone: "dim", text: "  ...and more" },
 ];
 
 function rowstyle(tone: row["tone"]): string {
@@ -69,7 +73,10 @@ function Panel({ rows }: { readonly rows: readonly row[] }) {
       <div className="flex-1 overflow-x-auto overflow-y-auto px-5 py-4 font-mono text-[12px] leading-[1.65] tabular-nums sm:text-[13px]">
         <div className="w-fit min-w-full whitespace-pre">
           {rows.map((entry, index) => (
-            <div key={`${entry.text}-${index}`} className={rowstyle(entry.tone)}>
+            <div
+              key={`${entry.text}-${index}`}
+              className={rowstyle(entry.tone)}
+            >
               {entry.text || "\u00A0"}
             </div>
           ))}
@@ -96,7 +103,9 @@ function Spotlight({
 }) {
   return (
     <div className="grid min-w-0 items-center gap-10 overflow-hidden md:grid-cols-2 md:gap-16">
-      <div className={`min-w-0 ${flip ? "order-1 md:order-2" : "order-1 md:order-1"}`}>
+      <div
+        className={`min-w-0 ${flip ? "order-1 md:order-2" : "order-1 md:order-1"}`}
+      >
         <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
           {title}
         </h2>
@@ -105,7 +114,10 @@ function Spotlight({
         </p>
         <ul className="mt-8 space-y-3">
           {bullets.map((b) => (
-            <li key={b} className="flex items-center gap-3 text-sm text-white/70">
+            <li
+              key={b}
+              className="flex items-center gap-3 text-sm text-white/70"
+            >
               <span className="h-1 w-1 rounded-full bg-white/40" />
               {b}
             </li>
@@ -113,7 +125,9 @@ function Spotlight({
         </ul>
       </div>
 
-      <div className={`min-w-0 ${flip ? "order-2 md:order-1" : "order-2 md:order-2"}`}>
+      <div
+        className={`min-w-0 ${flip ? "order-2 md:order-1" : "order-2 md:order-2"}`}
+      >
         <Stage tone={tone}>
           <div className="mx-auto w-full min-w-0 max-w-[1160px]">
             <Window title="" bar={false}>
@@ -150,7 +164,7 @@ export function Features() {
             bullets={[
               "text stdin becomes prompt context",
               "binary stdin for image, video, and audio workflows",
-              "chain: ai image | ai video, or pipe text to ai audio speak",
+              "chain: ai image | ai video, or pipe text to ai audio speak -P openai",
             ]}
             flip
             window={<Panel rows={pipingrows} />}
@@ -158,12 +172,13 @@ export function Features() {
 
           <Spotlight
             tone="iron"
-            title="Hundreds of models, one key."
-            description="Access text, image, video, speech, and transcription models from OpenAI, Anthropic, Google, Black Forest Labs, ByteDance, and more through Vercel AI Gateway."
+            title="Choose how you connect."
+            description="Use OpenRouter for broad model access, connect directly to OpenAI and FAL, or run Ollama and OMLX models locally."
             bullets={[
-              "short names resolve automatically: flux-2-pro, gpt-5.5, tts-1",
-              "live model listing from the gateway",
-              "per-type defaults configurable via env vars",
+              "explicit provider selection with no silent fallback",
+              "live OpenRouter and models.dev catalogs",
+              "cloud and local models in one concurrent run",
+              "per-provider defaults configurable via env vars",
             ]}
             window={<Panel rows={modelrows} />}
           />
