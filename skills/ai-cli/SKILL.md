@@ -1,6 +1,6 @@
 ---
 name: ai-cli
-description: Runs ai-cli to generate text, images, video, speech, and transcripts with cloud or local models. Use when the user asks to generate AI media, invoke OpenRouter/OpenAI/FAL/Ollama/OMLX, compare models, or compose terminal AI pipelines.
+description: Runs ai-cli to generate text, images, video, speech, and transcripts with cloud or local models. Use when the user asks to generate AI media, invoke OpenRouter/Anthropic/OpenAI/FAL/Ollama/OMLX, compare models, or compose terminal AI pipelines.
 ---
 
 # ai-cli
@@ -17,7 +17,7 @@ ai models
 ```
 
 Cloud providers require their corresponding environment variable:
-`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `FAL_API_KEY`. Ollama and OMLX
+`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `FAL_API_KEY`. Ollama and OMLX
 use local OpenAI-compatible endpoints. OMLX may require `OMLX_API_KEY`.
 Never print, persist, or include secret values in commands or output.
 
@@ -26,8 +26,10 @@ Never print, persist, or include secret values in commands or output.
 `-P` selects the default provider for unqualified model IDs:
 
 ```bash
+ai text -P anthropic -m claude-sonnet-4-6 "explain with Claude"
 ai text -P ollama -m qwen3:latest "explain this locally"
 ai text -P omlx -m local-model "explain this locally"
+ai models -P anthropic
 ai models -P ollama
 ai models -P omlx
 ai models -P all
@@ -37,7 +39,7 @@ Prefix individual models with `<provider>:` to run providers concurrently:
 
 ```bash
 ai text \
-  -m "openrouter:anthropic/model,ollama:qwen3:latest,omlx:local-model" \
+  -m "anthropic:claude-sonnet-4-6,openrouter:anthropic/claude-sonnet-4-6,ollama:qwen3:latest" \
   "compare these approaches"
 ```
 
@@ -74,7 +76,7 @@ raw binary. Never let raw binary enter agent context.
 
 ```bash
 git diff | ai text "review this change"
-cat screenshot.png | ai text -P ollama -m vision-model "describe errors"
+cat screenshot.png | ai text -P anthropic -m claude-sonnet-4-6 "describe errors"
 ai image "a dragon" | ai video "animate this"
 cat recording.mp3 | ai audio transcribe -P openai -o /tmp/transcript.txt
 ```

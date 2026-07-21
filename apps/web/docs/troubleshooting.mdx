@@ -14,15 +14,16 @@ Set the key for the selected provider:
 
 ```bash
 export OPENROUTER_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"
 export OPENAI_API_KEY="your-key"
 export FAL_API_KEY="your-key"
 ```
 
-Use `-P openai` or `-P fal` when selecting a direct provider. Add exports to your shell profile (`~/.zshrc`, `~/.bashrc`) to persist them.
+Use `-P anthropic`, `-P openai`, or `-P fal` when selecting a direct provider. Add exports to your shell profile (`~/.zshrc`, `~/.bashrc`) to persist them.
 
 ## Unsupported capability
 
-Providers support different command types. OpenRouter handles text, image, and video. OpenAI handles text, image, speech, and transcription. FAL handles image, video, speech, and transcription. Ollama and OMLX handle text, including image input when the selected model supports vision.
+Providers support different command types. OpenRouter handles text, image, and video. Anthropic handles text with vision input. OpenAI handles text, image, speech, and transcription. FAL handles image, video, speech, and transcription. Ollama and OMLX handle text, including image input when the selected model supports vision.
 
 Choose a supported provider explicitly:
 
@@ -52,7 +53,7 @@ ai text -P ollama -m qwen3:latest "hello"
 
 Catalog requests time out after five seconds and fall back to the last local cache or built-in defaults. Generation with an explicit model ID does not fetch a catalog.
 
-Check [OpenRouter status](https://status.openrouter.ai/) for OpenRouter discovery problems. Direct OpenAI metadata is supplied by [models.dev](https://models.dev/).
+Check [OpenRouter status](https://status.openrouter.ai/) for OpenRouter discovery problems. Direct Anthropic and OpenAI metadata is supplied by [models.dev](https://models.dev/).
 
 ## Timeout errors
 

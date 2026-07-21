@@ -18,6 +18,13 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     speech: "",
     transcription: "",
   },
+  anthropic: {
+    text: "claude-sonnet-4-6",
+    image: "",
+    video: "",
+    speech: "",
+    transcription: "",
+  },
   openai: {
     text: "gpt-5.5",
     image: "gpt-image-2",
@@ -147,6 +154,7 @@ const BUILTIN_MODELS: Record<ProviderId, ModelEntry[]> = {
     entry("openai/gpt-image-2", "image"),
     entry("bytedance/seedance-2.0", "video"),
   ],
+  anthropic: [entry("claude-sonnet-4-6", "text", "anthropic")],
   openai: [
     entry("gpt-5.5", "text", "openai"),
     entry("gpt-image-2", "image", "openai"),
@@ -202,8 +210,8 @@ async function fetchCatalog(
     const remote =
       provider === "openrouter"
         ? await fetchOpenRouterModels(options.fetch ?? fetch)
-        : provider === "openai"
-          ? await fetchModelsDevProvider("openai", options.fetch ?? fetch)
+        : provider === "anthropic" || provider === "openai"
+          ? await fetchModelsDevProvider(provider, options.fetch ?? fetch)
           : isLocalProvider(provider)
             ? await fetchCompatibleModels(provider, options.fetch ?? fetch)
             : [];
@@ -254,7 +262,7 @@ async function fetchOpenRouterModels(
 }
 
 async function fetchModelsDevProvider(
-  provider: ProviderId,
+  provider: "anthropic" | "openai",
   fetchImpl: typeof fetch
 ): Promise<ModelEntry[]> {
   const providers = await fetchJson<
@@ -265,10 +273,10 @@ async function fetchModelsDevProvider(
   return Object.entries(models).flatMap(([id, model]) => {
     const capabilities = capabilitiesFromOutputs(
       model.modalities?.output
-    ).filter((capability) =>
-      provider === "openai"
-        ? capability === "text" || capability === "image"
-        : true
+    ).filter(
+      (capability) =>
+        capability === "text" ||
+        (provider === "openai" && capability === "image")
     );
     if (capabilities.length === 0) return [];
     return [
@@ -520,8 +528,14 @@ function modelTarget(provider: ProviderId, modelId: string): ModelTarget {
 }
 
 function normalizeModelId(provider: ProviderId, modelId: string): string {
-  return provider === "openai" && modelId.startsWith("openai/")
-    ? modelId.slice("openai/".length)
+  const creatorPrefix =
+    provider === "anthropic"
+      ? "anthropic/"
+      : provider === "openai"
+        ? "openai/"
+        : undefined;
+  return creatorPrefix && modelId.startsWith(creatorPrefix)
+    ? modelId.slice(creatorPrefix.length)
     : modelId;
 }
 

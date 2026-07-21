@@ -47,6 +47,9 @@ describe("resolveModels", () => {
     expect(resolveModels("openrouter", "text")).toEqual([
       target("openrouter", "openai/gpt-5.5"),
     ]);
+    expect(resolveModels("anthropic", "text")).toEqual([
+      target("anthropic", "claude-sonnet-4-6"),
+    ]);
     expect(resolveModels("openai", "image")).toEqual([
       target("openai", "gpt-image-2"),
     ]);
@@ -75,7 +78,10 @@ describe("resolveModels", () => {
     ]);
   });
 
-  test("strips the creator prefix for direct OpenAI", () => {
+  test("strips creator prefixes for direct provider model IDs", () => {
+    expect(
+      resolveModels("anthropic", "text", "anthropic/claude-sonnet-4-6")
+    ).toEqual([target("anthropic", "claude-sonnet-4-6")]);
     expect(resolveModels("openai", "text", "openai/gpt-5.5")).toEqual([
       target("openai", "gpt-5.5"),
     ]);
@@ -86,10 +92,11 @@ describe("resolveModels", () => {
       resolveModels(
         "openrouter",
         "text",
-        "openrouter:anthropic/claude-sonnet-4,ollama:qwen3.6:latest,omlx:qwen3:thinking"
+        "openrouter:anthropic/claude-sonnet-4,anthropic:claude-sonnet-4-6,ollama:qwen3.6:latest,omlx:qwen3:thinking"
       )
     ).toEqual([
       target("openrouter", "anthropic/claude-sonnet-4"),
+      target("anthropic", "claude-sonnet-4-6"),
       target("ollama", "qwen3.6:latest"),
       target("omlx", "qwen3:thinking"),
     ]);
@@ -108,6 +115,9 @@ describe("resolveModels", () => {
   });
 
   test("rejects unsupported provider capabilities", () => {
+    expect(() => resolveModels("anthropic", "image")).toThrow(
+      'image generation is not supported by provider "anthropic"'
+    );
     expect(() => resolveModels("openai", "video")).toThrow(
       'video generation is not supported by provider "openai"'
     );
@@ -215,6 +225,40 @@ describe("fetchModelCatalog", () => {
     expect(result.video).toEqual([]);
     expect(result.lookup.some((model) => model.id === "tts-1")).toBe(true);
     expect(result.lookup.some((model) => model.id === "whisper-1")).toBe(true);
+  });
+
+  test("discovers direct Anthropic text models from models.dev", async () => {
+    const fetchMock = mockFetch(() => ({
+      anthropic: {
+        models: {
+          "claude-opus-4-8": {
+            name: "Claude Opus 4.8",
+            modalities: { output: ["text"] },
+            cost: { input: 5, output: 25 },
+            limit: { context: 1_000_000, output: 128_000 },
+          },
+          "future-image": {
+            modalities: { output: ["image"] },
+          },
+        },
+      },
+      openai: {
+        models: {
+          "gpt-5.5": { modalities: { output: ["text"] } },
+        },
+      },
+    }));
+
+    const result = await fetchModelCatalog("anthropic", {
+      cache: false,
+      fetch: fetchMock,
+    });
+
+    expect(result.text.some((model) => model.id === "claude-opus-4-8")).toBe(
+      true
+    );
+    expect(result.lookup.some((model) => model.id === "gpt-5.5")).toBe(false);
+    expect(result.image).toEqual([]);
   });
 
   test("discovers models from a local OpenAI-compatible endpoint", async () => {

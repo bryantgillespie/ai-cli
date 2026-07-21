@@ -29,6 +29,11 @@ export OPENROUTER_API_KEY="your-key"
 To connect directly to another provider, set the provider and matching key:
 
 ```bash
+export AI_CLI_PROVIDER="anthropic"
+export ANTHROPIC_API_KEY="your-key"
+```
+
+```bash
 export AI_CLI_PROVIDER="openai"
 export OPENAI_API_KEY="your-key"
 ```
@@ -52,6 +57,9 @@ The default endpoints are `http://127.0.0.1:11434/v1` for Ollama and `http://127
 <Properties>
   <Property name="OPENROUTER_API_KEY" type="string">
     OpenRouter API key. Supports text, image, and video generation.
+  </Property>
+  <Property name="ANTHROPIC_API_KEY" type="string">
+    Anthropic API key. Supports text generation and vision input.
   </Property>
   <Property name="OPENAI_API_KEY" type="string">
     OpenAI API key. Supports text, image, speech, and transcription.

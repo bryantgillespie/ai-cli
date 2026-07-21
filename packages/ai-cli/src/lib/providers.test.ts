@@ -10,6 +10,7 @@ import {
 const originalProvider = process.env.AI_CLI_PROVIDER;
 const credentialKeys = [
   "OPENROUTER_API_KEY",
+  "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "FAL_API_KEY",
   "FAL_KEY",
@@ -45,7 +46,7 @@ describe("resolveProviderId", () => {
 
   test("rejects unknown providers at the configuration boundary", () => {
     expect(() => resolveProviderId("gateway")).toThrow(
-      'provider must be one of: openrouter, openai, fal, ollama, omlx (got "gateway")'
+      'provider must be one of: openrouter, anthropic, openai, fal, ollama, omlx (got "gateway")'
     );
   });
 });
@@ -64,6 +65,22 @@ describe("createProvider", () => {
 
     expect(typeof getLanguageModel(provider, "openai/gpt-5.5")).toBe("object");
     expect(typeof getVideoModel(provider, "bytedance/seedance-2.0")).toBe(
+      "object"
+    );
+  });
+
+  test("requires Anthropic credentials at the provider boundary", () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => createProvider("anthropic")).toThrow(
+      'provider "anthropic" requires ANTHROPIC_API_KEY'
+    );
+  });
+
+  test("creates direct Anthropic text models", () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    const provider = createProvider("anthropic");
+
+    expect(typeof getLanguageModel(provider, "claude-sonnet-4-6")).toBe(
       "object"
     );
   });

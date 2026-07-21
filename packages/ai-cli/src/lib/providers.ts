@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createFal } from "@ai-sdk/fal";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -14,6 +15,7 @@ type VideoModel = Parameters<typeof experimental_generateVideo>[0]["model"];
 
 export const PROVIDER_IDS = [
   "openrouter",
+  "anthropic",
   "openai",
   "fal",
   "ollama",
@@ -54,6 +56,15 @@ export function createProvider(input?: string): ProviderAdapter {
         languageModel: (modelId) => provider.chat(modelId),
         imageModel: (modelId) => provider.imageModel(modelId),
         videoModel: (modelId) => provider.videoModel(modelId),
+      };
+    }
+    case "anthropic": {
+      const provider = createAnthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+      return {
+        id,
+        languageModel: (modelId) => provider(modelId),
       };
     }
     case "openai": {
@@ -178,22 +189,32 @@ function requireCapability<T>(
 }
 
 function assertCredential(provider: ProviderId): void {
-  if (provider === "ollama" || provider === "omlx") return;
+  let available: string | undefined;
+  let variable: string;
 
-  const available =
-    provider === "openrouter"
-      ? process.env.OPENROUTER_API_KEY
-      : provider === "openai"
-        ? process.env.OPENAI_API_KEY
-        : (process.env.FAL_API_KEY ?? process.env.FAL_KEY);
+  switch (provider) {
+    case "ollama":
+    case "omlx":
+      return;
+    case "openrouter":
+      available = process.env.OPENROUTER_API_KEY;
+      variable = "OPENROUTER_API_KEY";
+      break;
+    case "anthropic":
+      available = process.env.ANTHROPIC_API_KEY;
+      variable = "ANTHROPIC_API_KEY";
+      break;
+    case "openai":
+      available = process.env.OPENAI_API_KEY;
+      variable = "OPENAI_API_KEY";
+      break;
+    case "fal":
+      available = process.env.FAL_API_KEY ?? process.env.FAL_KEY;
+      variable = "FAL_API_KEY or FAL_KEY";
+      break;
+  }
 
-  if (available) return;
-
-  const variable =
-    provider === "openrouter"
-      ? "OPENROUTER_API_KEY"
-      : provider === "openai"
-        ? "OPENAI_API_KEY"
-        : "FAL_API_KEY or FAL_KEY";
-  throw new Error(`provider "${provider}" requires ${variable}`);
+  if (!available) {
+    throw new Error(`provider "${provider}" requires ${variable}`);
+  }
 }

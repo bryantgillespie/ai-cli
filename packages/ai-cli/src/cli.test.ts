@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -56,6 +56,101 @@ describe("cli integration", () => {
     const { exitCode, stderr } = await run("text");
     expect(exitCode).toBe(1);
     expect(stderr).toContain("prompt, stdin, or image is required");
+  });
+
+  test("text sends vision requests directly to Anthropic", async () => {
+    const anthropic = mockAnthropicServer("anthropic-secret");
+    const output = mkdtempSync(join(tmpdir(), "ai-cli-anthropic-"));
+    const image = join(output, "input.png");
+    writeFileSync(image, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+    try {
+      const { exitCode, stdout, stderr } = await runWithEnv(
+        [
+          "text",
+          "-P",
+          "anthropic",
+          "--image",
+          image,
+          "--json",
+          "--quiet",
+          "--format",
+          "txt",
+          "--output",
+          output,
+          "describe this",
+        ],
+        {
+          ANTHROPIC_API_KEY: "anthropic-secret",
+          ANTHROPIC_BASE_URL: `http://127.0.0.1:${anthropic.server.port}/v1`,
+        }
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      const result = JSON.parse(stdout) as {
+        results: Array<{ provider: string; model: string; file: string }>;
+      };
+      expect(result.results).toMatchObject([
+        {
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+        },
+      ]);
+      expect(readFileSync(result.results[0]!.file, "utf8")).toBe(
+        "anthropic:claude-sonnet-4-6"
+      );
+      expect(anthropic.requests).toHaveLength(1);
+      expect(anthropic.requests[0]?.model).toBe("claude-sonnet-4-6");
+      expect(JSON.stringify(anthropic.requests[0]?.messages)).toContain(
+        '"type":"image"'
+      );
+    } finally {
+      anthropic.server.stop(true);
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  test("text keeps vision input compatible with OpenAI-style providers", async () => {
+    const requests: Array<{ model: string; messages?: unknown[] }> = [];
+    const ollama = mockChatServer("ollama", undefined, false, requests);
+    const output = mkdtempSync(join(tmpdir(), "ai-cli-compatible-vision-"));
+    const image = join(output, "input.png");
+    writeFileSync(image, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+    try {
+      const { exitCode, stderr } = await runWithEnv(
+        [
+          "text",
+          "-P",
+          "ollama",
+          "-m",
+          "vision-model",
+          "--image",
+          image,
+          "--json",
+          "--quiet",
+          "--format",
+          "txt",
+          "--output",
+          output,
+          "describe this",
+        ],
+        {
+          OLLAMA_BASE_URL: `http://127.0.0.1:${ollama.port}/v1`,
+        }
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      expect(requests).toHaveLength(1);
+      expect(JSON.stringify(requests[0]?.messages)).toContain(
+        '"type":"image_url"'
+      );
+    } finally {
+      ollama.stop(true);
+      rmSync(output, { recursive: true, force: true });
+    }
   });
 
   test("text routes concurrent jobs to separate local providers", async () => {
@@ -175,6 +270,7 @@ describe("cli integration", () => {
     expect(stdout).toContain("--format");
     expect(stdout).toContain("--image");
     expect(stdout).toContain("--temperature");
+    expect(stdout).toContain("anthropic");
     expect(stdout).toContain("ollama");
     expect(stdout).toContain("omlx");
     expect(stdout).toContain("prefix with provider:");
@@ -275,6 +371,7 @@ describe("cli integration", () => {
     expect(stdout).toContain("[model]");
     expect(stdout).toContain("--provider");
     expect(stdout).toContain("detailed info");
+    expect(stdout).toContain("anthropic");
     expect(stdout).toContain("ollama");
     expect(stdout).toContain("omlx");
     expect(stdout).toContain("all");
@@ -284,7 +381,7 @@ describe("cli integration", () => {
     const { exitCode, stderr } = await run("models", "--provider", "gateway");
     expect(exitCode).toBe(1);
     expect(stderr).toContain(
-      "provider must be one of: openrouter, openai, fal, ollama, omlx"
+      "provider must be one of: openrouter, anthropic, openai, fal, ollama, omlx"
     );
   });
 
@@ -317,7 +414,42 @@ describe("cli integration", () => {
   });
 });
 
-function mockChatServer(provider: string, apiKey?: string, fail = false) {
+function mockAnthropicServer(apiKey: string) {
+  const requests: Array<{ model?: string; messages?: unknown[] }> = [];
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(request) {
+      if (request.headers.get("x-api-key") !== apiKey) {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const body = (await request.json()) as {
+        model?: string;
+        messages?: unknown[];
+      };
+      requests.push(body);
+      return Response.json({
+        type: "message",
+        id: "msg_anthropic",
+        model: body.model,
+        content: [
+          { type: "text", text: `anthropic:${body.model ?? "unknown"}` },
+        ],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    },
+  });
+  return { server, requests };
+}
+
+function mockChatServer(
+  provider: string,
+  apiKey?: string,
+  fail = false,
+  requests?: Array<{ model: string; messages?: unknown[] }>
+) {
   return Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -334,7 +466,11 @@ function mockChatServer(provider: string, apiKey?: string, fail = false) {
           { status: 400 }
         );
       }
-      const body = (await request.json()) as { model: string };
+      const body = (await request.json()) as {
+        model: string;
+        messages?: unknown[];
+      };
+      requests?.push(body);
       return Response.json({
         id: `${provider}-response`,
         object: "chat.completion",
