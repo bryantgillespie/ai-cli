@@ -7,6 +7,10 @@ import pkg from "../package.json";
 
 const CLI = ["bun", "run", "src/index.ts"];
 const ROOT = import.meta.dir + "/..";
+const PNG_IMAGE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64"
+);
 
 async function run(...args: string[]) {
   return runWithEnv(args);
@@ -14,9 +18,13 @@ async function run(...args: string[]) {
 
 async function runWithEnv(
   args: string[],
-  env?: Record<string, string | undefined>
+  env?: Record<string, string | undefined>,
+  preload?: string
 ) {
-  const proc = Bun.spawn([...CLI, ...args], {
+  const command = preload
+    ? ["bun", "run", "--preload", preload, "src/index.ts"]
+    : CLI;
+  const proc = Bun.spawn([...command, ...args], {
     cwd: ROOT,
     env: env ? { ...process.env, ...env } : undefined,
     stdout: "pipe",
@@ -62,7 +70,7 @@ describe("cli integration", () => {
     const anthropic = mockAnthropicServer("anthropic-secret");
     const output = mkdtempSync(join(tmpdir(), "ai-cli-anthropic-"));
     const image = join(output, "input.png");
-    writeFileSync(image, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    writeFileSync(image, PNG_IMAGE);
 
     try {
       const { exitCode, stdout, stderr } = await runWithEnv(
@@ -101,12 +109,150 @@ describe("cli integration", () => {
         "anthropic:claude-sonnet-4-6"
       );
       expect(anthropic.requests).toHaveLength(1);
-      expect(anthropic.requests[0]?.model).toBe("claude-sonnet-4-6");
-      expect(JSON.stringify(anthropic.requests[0]?.messages)).toContain(
-        '"type":"image"'
-      );
+      expect(anthropic.requests[0]).toMatchObject({
+        method: "POST",
+        pathname: "/v1/messages",
+        apiVersion: "2023-06-01",
+        model: "claude-sonnet-4-6",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: PNG_IMAGE.toString("base64"),
+                },
+              },
+              { type: "text", text: "describe this" },
+            ],
+          },
+        ],
+      });
     } finally {
       anthropic.server.stop(true);
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  test("text keeps vision input compatible with direct OpenAI", async () => {
+    const openai = mockOpenAIServer("openai-secret");
+    const output = mkdtempSync(join(tmpdir(), "ai-cli-openai-vision-"));
+    const image = join(output, "input.png");
+    writeFileSync(image, PNG_IMAGE);
+
+    try {
+      const { exitCode, stderr } = await runWithEnv(
+        [
+          "text",
+          "-P",
+          "openai",
+          "-m",
+          "gpt-5.5",
+          "--image",
+          image,
+          "--json",
+          "--quiet",
+          "--format",
+          "txt",
+          "--output",
+          output,
+          "describe this",
+        ],
+        {
+          OPENAI_API_KEY: "openai-secret",
+          OPENAI_BASE_URL: `http://127.0.0.1:${openai.server.port}/v1`,
+        }
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      expect(openai.requests).toHaveLength(1);
+      expect(openai.requests[0]).toMatchObject({
+        method: "POST",
+        pathname: "/v1/responses",
+        authorization: "Bearer openai-secret",
+        body: {
+          model: "gpt-5.5",
+          input: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_image",
+                  image_url: `data:image/png;base64,${PNG_IMAGE.toString("base64")}`,
+                },
+                { type: "input_text", text: "describe this" },
+              ],
+            },
+          ],
+        },
+      });
+    } finally {
+      openai.server.stop(true);
+      rmSync(output, { recursive: true, force: true });
+    }
+  });
+
+  test("text keeps vision input compatible with OpenRouter", async () => {
+    const output = mkdtempSync(join(tmpdir(), "ai-cli-openrouter-vision-"));
+    const image = join(output, "input.png");
+    const requestFile = join(output, "request.json");
+    const preload = writeChatFetchPreload(output);
+    writeFileSync(image, PNG_IMAGE);
+
+    try {
+      const { exitCode, stderr } = await runWithEnv(
+        [
+          "text",
+          "-P",
+          "openrouter",
+          "-m",
+          "test/vision-model",
+          "--image",
+          image,
+          "--json",
+          "--quiet",
+          "--format",
+          "txt",
+          "--output",
+          output,
+          "describe this",
+        ],
+        {
+          OPENROUTER_API_KEY: "openrouter-secret",
+          AI_CLI_TEST_REQUEST_FILE: requestFile,
+        },
+        preload
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      expect(JSON.parse(readFileSync(requestFile, "utf8"))).toMatchObject({
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        method: "POST",
+        authorization: "Bearer openrouter-secret",
+        body: {
+          model: "test/vision-model",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/png;base64,${PNG_IMAGE.toString("base64")}`,
+                  },
+                },
+                { type: "text", text: "describe this" },
+              ],
+            },
+          ],
+        },
+      });
+    } finally {
       rmSync(output, { recursive: true, force: true });
     }
   });
@@ -116,7 +262,7 @@ describe("cli integration", () => {
     const ollama = mockChatServer("ollama", undefined, false, requests);
     const output = mkdtempSync(join(tmpdir(), "ai-cli-compatible-vision-"));
     const image = join(output, "input.png");
-    writeFileSync(image, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    writeFileSync(image, PNG_IMAGE);
 
     try {
       const { exitCode, stderr } = await runWithEnv(
@@ -415,7 +561,13 @@ describe("cli integration", () => {
 });
 
 function mockAnthropicServer(apiKey: string) {
-  const requests: Array<{ model?: string; messages?: unknown[] }> = [];
+  const requests: Array<{
+    method: string;
+    pathname: string;
+    apiVersion: string | null;
+    model?: string;
+    messages?: unknown[];
+  }> = [];
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -427,7 +579,12 @@ function mockAnthropicServer(apiKey: string) {
         model?: string;
         messages?: unknown[];
       };
-      requests.push(body);
+      requests.push({
+        method: request.method,
+        pathname: new URL(request.url).pathname,
+        apiVersion: request.headers.get("anthropic-version"),
+        ...body,
+      });
       return Response.json({
         type: "message",
         id: "msg_anthropic",
@@ -442,6 +599,96 @@ function mockAnthropicServer(apiKey: string) {
     },
   });
   return { server, requests };
+}
+
+function mockOpenAIServer(apiKey: string) {
+  const requests: Array<{
+    method: string;
+    pathname: string;
+    authorization: string | null;
+    body: { model?: string; input?: unknown[] };
+  }> = [];
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(request) {
+      if (request.headers.get("authorization") !== `Bearer ${apiKey}`) {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const body = (await request.json()) as {
+        model?: string;
+        input?: unknown[];
+      };
+      requests.push({
+        method: request.method,
+        pathname: new URL(request.url).pathname,
+        authorization: request.headers.get("authorization"),
+        body,
+      });
+      return Response.json({
+        id: "resp_openai",
+        created_at: 1,
+        model: body.model,
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            id: "msg_openai",
+            content: [
+              {
+                type: "output_text",
+                text: `openai:${body.model ?? "unknown"}`,
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    },
+  });
+  return { server, requests };
+}
+
+function writeChatFetchPreload(directory: string): string {
+  const preload = join(directory, "mock-chat-fetch.mjs");
+  writeFileSync(
+    preload,
+    `import { writeFileSync } from "node:fs";
+
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init);
+  const body = await request.clone().json();
+  writeFileSync(
+    process.env.AI_CLI_TEST_REQUEST_FILE,
+    JSON.stringify({
+      url: request.url,
+      method: request.method,
+      authorization: request.headers.get("authorization"),
+      body,
+    })
+  );
+  return Response.json({
+    id: "chatcmpl_openrouter",
+    object: "chat.completion",
+    created: 1,
+    model: body.model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: \`openrouter:\${body.model}\`,
+        },
+        finish_reason: "stop",
+      },
+    ],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  });
+};
+`
+  );
+  return preload;
 }
 
 function mockChatServer(

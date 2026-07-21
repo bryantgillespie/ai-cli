@@ -268,7 +268,8 @@ async function fetchModelsDevProvider(
   const providers = await fetchJson<
     Record<string, { models?: Record<string, RawModelsDevModel> }>
   >(fetchImpl, MODELS_DEV_URL);
-  const models = providers[provider]?.models ?? {};
+  const models = providers[provider]?.models;
+  if (!models) throw new Error(`models.dev omitted ${provider} models`);
 
   return Object.entries(models).flatMap(([id, model]) => {
     const capabilities = capabilitiesFromOutputs(

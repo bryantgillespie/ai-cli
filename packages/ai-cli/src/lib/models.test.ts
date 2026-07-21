@@ -328,6 +328,33 @@ describe("fetchModelCatalog", () => {
     ).toBe(true);
   });
 
+  test("preserves stale cache when models.dev omits the provider", async () => {
+    const cacheDir = join(
+      "/tmp",
+      `ai-cli-model-test-${process.pid}-${Date.now()}`
+    );
+    process.env.AI_CLI_CACHE_DIR = cacheDir;
+    let response: unknown = {
+      anthropic: {
+        models: {
+          "cached-model": { modalities: { output: ["text"] } },
+        },
+      },
+    };
+    const fetchMock = mockFetch(() => response);
+
+    await fetchModelCatalog("anthropic", { fetch: fetchMock, now: 1_000 });
+    resetModelCache();
+    response = {};
+    const result = await fetchModelCatalog("anthropic", {
+      fetch: fetchMock,
+      now: 3_601_001,
+    });
+
+    expect(result.text.some((model) => model.id === "cached-model")).toBe(true);
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
   test("reuses the local cache", async () => {
     const cacheDir = join(
       "/tmp",
