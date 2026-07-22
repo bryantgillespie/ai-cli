@@ -11,12 +11,13 @@ Choose a provider with `-P` or `AI_CLI_PROVIDER`. OpenRouter is the default.
 | Provider   | Text | Image | Video | Speech | Transcription |
 | ---------- | ---- | ----- | ----- | ------ | ------------- |
 | OpenRouter | Yes  | Yes   | Yes   | No     | No            |
+| Anthropic  | Yes  | No    | No    | No     | No            |
 | OpenAI     | Yes  | Yes   | No    | Yes    | Yes           |
 | FAL        | No   | Yes   | Yes   | Yes    | Yes           |
 | Ollama     | Yes  | No    | No    | No     | No            |
 | OMLX       | Yes  | No    | No    | No     | No            |
 
-Ollama and OMLX text models can accept image inputs when the local model supports vision. Provider selection is explicit. ai-cli never sends a request to another provider as a fallback.
+Anthropic and capable Ollama or OMLX text models accept image inputs for vision. Provider selection is explicit. ai-cli never sends a request to another provider as a fallback.
 
 ## Default models
 
@@ -30,14 +31,15 @@ OpenRouter defaults:
 | image | `openai/gpt-image-2`     |
 | video | `bytedance/seedance-2.0` |
 
-OpenAI defaults use `gpt-5.5`, `gpt-image-2`, `tts-1`, and `whisper-1`. FAL defaults use `fal-ai/flux-pro/v1.1-ultra`, `fal-ai/luma-dream-machine/ray-2`, `fal-ai/minimax/speech-02-hd`, and `whisper`. Ollama and OMLX require an explicit model through `-m` or `AI_CLI_TEXT_MODEL`.
+Anthropic defaults to `claude-sonnet-4-6`. OpenAI defaults use `gpt-5.5`, `gpt-image-2`, `tts-1`, and `whisper-1`. FAL defaults use `fal-ai/flux-pro/v1.1-ultra`, `fal-ai/luma-dream-machine/ray-2`, `fal-ai/minimax/speech-02-hd`, and `whisper`. Ollama and OMLX require an explicit model through `-m` or `AI_CLI_TEXT_MODEL`.
 
 ## Specifying a model
 
 Use the exact IDs shown by `ai models`. OpenRouter IDs include the creator prefix. Direct and local providers use their native form.
 
 ```bash
-ai text -m "anthropic/claude-sonnet-4" "hello"
+ai text -m "anthropic/claude-sonnet-4" "hello through OpenRouter"
+ai text -P anthropic -m "claude-sonnet-4-6" "hello directly"
 ai text -P ollama -m "qwen3:latest" "hello locally"
 ai image -m "openai/gpt-image-2" "a sunset"
 ai audio speak -P openai -m "tts-1" "hello"
@@ -50,7 +52,7 @@ Prefix a model with `<provider>:` to override the default provider for that mode
 Generate with multiple models by comma-separating `-m`. Cloud and local models can run concurrently:
 
 ```bash
-ai text "compare these" -m "openrouter:anthropic/claude-sonnet-4,ollama:qwen3:latest,omlx:qwen3:thinking"
+ai text "compare these" -m "anthropic:claude-sonnet-4-6,openrouter:anthropic/claude-sonnet-4-6,ollama:qwen3:latest"
 ai image "a sunset" -m "openai/gpt-image-2,google/gemini-3-pro-image"
 ```
 
@@ -60,6 +62,7 @@ Combine with `-n` to generate multiple outputs per model.
 
 ```bash
 ai models                              # OpenRouter models
+ai models -P anthropic --type text     # direct Anthropic text models
 ai models -P openai --type image       # direct OpenAI image models
 ai models -P fal --type video          # FAL video models
 ai models -P ollama --type text        # models installed in Ollama
@@ -69,7 +72,7 @@ ai models --creator google             # Google models through OpenRouter
 ai models --json                       # machine-readable output
 ```
 
-OpenRouter catalogs come from OpenRouter's live model, image, and video APIs. Direct OpenAI metadata comes from [models.dev](https://models.dev/). FAL uses provider-specific defaults because models.dev does not currently publish a FAL catalog. Ollama and OMLX use each local server's `/v1/models` endpoint.
+OpenRouter catalogs come from OpenRouter's live model, image, and video APIs. Direct Anthropic and OpenAI metadata comes from [models.dev](https://models.dev/). FAL uses provider-specific defaults because models.dev does not currently publish a FAL catalog. Ollama and OMLX use each local server's `/v1/models` endpoint.
 
 Cloud catalogs are cached locally for one hour. Local catalogs refresh for each command. Catalog discovery is used for listing and detail output only, so an explicit model ID can still generate during a catalog outage.
 
@@ -78,7 +81,8 @@ Cloud catalogs are cached locally for one hour. Local catalogs refresh for each 
 Pass a model ID to see its context window, output limit, pricing, and release date:
 
 ```bash
-ai models anthropic/claude-opus-4.6
+ai models anthropic/claude-sonnet-4.6
+ai models -P anthropic claude-sonnet-4-6 --json
 ai models -P openai gpt-5.5 --json
 ai models -P all ollama:qwen3:latest --json
 ```

@@ -1,6 +1,6 @@
 import {
   generateText,
-  type ImagePart,
+  type FilePart,
   type ModelMessage,
   type TextPart,
 } from "ai";
@@ -56,7 +56,7 @@ export function registerTextCommand(program: Command) {
     .argument("[prompt]", "The prompt to generate text from")
     .option(
       "-P, --provider <provider>",
-      "Default provider: openrouter, openai, ollama, omlx (default: openrouter)"
+      "Default provider: openrouter, anthropic, openai, ollama, omlx (default: openrouter)"
     )
     .option(
       "-m, --model <model>",
@@ -174,10 +174,10 @@ function buildTextPrompt({
     return prompt!;
   }
 
-  const content: Array<TextPart | ImagePart> = [];
+  const content: Array<TextPart | FilePart> = [];
 
   if (stdinText) content.push({ type: "text", text: stdinText });
-  for (const image of images) content.push({ type: "image", image });
+  for (const image of images) content.push(imageFilePart(image));
   if (prompt) {
     content.push({ type: "text", text: prompt });
   } else if (!stdinText) {
@@ -189,4 +189,15 @@ function buildTextPrompt({
   }
 
   return [{ role: "user", content }];
+}
+
+function imageFilePart(image: ImageReference): FilePart {
+  return {
+    type: "file",
+    mediaType: "image",
+    data:
+      typeof image === "string"
+        ? { type: "url", url: new URL(image) }
+        : { type: "data", data: image },
+  };
 }

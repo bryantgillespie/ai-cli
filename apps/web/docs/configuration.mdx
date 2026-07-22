@@ -11,12 +11,15 @@ ai-cli is configured through command flags and environment variables. There is n
 <Properties>
   <Property
     name="AI_CLI_PROVIDER"
-    type="openrouter | openai | fal | ollama | omlx"
+    type="openrouter | anthropic | openai | fal | ollama | omlx"
   >
     Default provider. OpenRouter is used when unset.
   </Property>
   <Property name="OPENROUTER_API_KEY" type="string">
     OpenRouter API key.
+  </Property>
+  <Property name="ANTHROPIC_API_KEY" type="string">
+    Anthropic API key.
   </Property>
   <Property name="OPENAI_API_KEY" type="string">
     OpenAI API key.
@@ -87,6 +90,14 @@ export OPENROUTER_API_KEY="your-key"
 export AI_CLI_TEXT_MODEL="anthropic/claude-sonnet-4"
 export AI_CLI_IMAGE_MODEL="openai/gpt-image-2"
 export AI_CLI_OUTPUT_DIR="$HOME/ai-output"
+```
+
+Direct Anthropic example:
+
+```bash
+export AI_CLI_PROVIDER="anthropic"
+export ANTHROPIC_API_KEY="your-key"
+export AI_CLI_TEXT_MODEL="claude-sonnet-4-6"
 ```
 
 Local example:

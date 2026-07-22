@@ -110,13 +110,17 @@ Generate text from a prompt.
 
 ```bash
 ai text "explain quantum computing"
+ai text -P anthropic --image screenshot.png "describe this"
 ai text "summarize this" < notes.txt
 ```
 
 ### Options
 
 <Properties>
-  <Property name="-P, --provider" type="openrouter | openai | ollama | omlx">
+  <Property
+    name="-P, --provider"
+    type="openrouter | anthropic | openai | ollama | omlx"
+  >
     Default provider for unqualified models.
   </Property>
   <Property name="-m, --model" type="string">
@@ -127,6 +131,9 @@ ai text "summarize this" < notes.txt
   </Property>
   <Property name="-f, --format" type="md | txt" default="md">
     Output format.
+  </Property>
+  <Property name="-i, --image" type="path | URL">
+    Image input for vision-capable text models. Repeatable.
   </Property>
   <Property name="-n, --count" type="number" default="1">
     Number of generations per model.
@@ -265,7 +272,7 @@ ai models
 ai models --type image
 ai models --creator openai --json
 ai models claude-opus-4.6
-ai models anthropic/claude-opus-4.6 --json
+ai models anthropic/claude-sonnet-4.6 --json
 ```
 
 ### Arguments
@@ -282,7 +289,7 @@ ai models anthropic/claude-opus-4.6 --json
 <Properties>
   <Property
     name="-P, --provider"
-    type="openrouter | openai | fal | ollama | omlx | all"
+    type="openrouter | anthropic | openai | fal | ollama | omlx | all"
   >
     Provider catalog to list. Use `all` for provider-qualified entries from
     every catalog.
@@ -301,7 +308,7 @@ ai models anthropic/claude-opus-4.6 --json
   </Property>
 </Properties>
 
-OpenRouter models are fetched from OpenRouter. Direct OpenAI metadata comes from models.dev. Ollama and OMLX use their local `/v1/models` endpoints. Cloud catalogs are cached locally for one hour.
+OpenRouter models are fetched from OpenRouter. Direct Anthropic and OpenAI metadata comes from models.dev. Ollama and OMLX use their local `/v1/models` endpoints. Cloud catalogs are cached locally for one hour.
 
 ---
 

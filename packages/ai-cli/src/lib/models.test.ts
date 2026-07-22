@@ -47,6 +47,9 @@ describe("resolveModels", () => {
     expect(resolveModels("openrouter", "text")).toEqual([
       target("openrouter", "openai/gpt-5.5"),
     ]);
+    expect(resolveModels("anthropic", "text")).toEqual([
+      target("anthropic", "claude-sonnet-4-6"),
+    ]);
     expect(resolveModels("openai", "image")).toEqual([
       target("openai", "gpt-image-2"),
     ]);
@@ -75,7 +78,10 @@ describe("resolveModels", () => {
     ]);
   });
 
-  test("strips the creator prefix for direct OpenAI", () => {
+  test("strips creator prefixes for direct provider model IDs", () => {
+    expect(
+      resolveModels("anthropic", "text", "anthropic/claude-sonnet-4-6")
+    ).toEqual([target("anthropic", "claude-sonnet-4-6")]);
     expect(resolveModels("openai", "text", "openai/gpt-5.5")).toEqual([
       target("openai", "gpt-5.5"),
     ]);
@@ -86,10 +92,11 @@ describe("resolveModels", () => {
       resolveModels(
         "openrouter",
         "text",
-        "openrouter:anthropic/claude-sonnet-4,ollama:qwen3.6:latest,omlx:qwen3:thinking"
+        "openrouter:anthropic/claude-sonnet-4,anthropic:claude-sonnet-4-6,ollama:qwen3.6:latest,omlx:qwen3:thinking"
       )
     ).toEqual([
       target("openrouter", "anthropic/claude-sonnet-4"),
+      target("anthropic", "claude-sonnet-4-6"),
       target("ollama", "qwen3.6:latest"),
       target("omlx", "qwen3:thinking"),
     ]);
@@ -108,6 +115,9 @@ describe("resolveModels", () => {
   });
 
   test("rejects unsupported provider capabilities", () => {
+    expect(() => resolveModels("anthropic", "image")).toThrow(
+      'image generation is not supported by provider "anthropic"'
+    );
     expect(() => resolveModels("openai", "video")).toThrow(
       'video generation is not supported by provider "openai"'
     );
@@ -217,6 +227,40 @@ describe("fetchModelCatalog", () => {
     expect(result.lookup.some((model) => model.id === "whisper-1")).toBe(true);
   });
 
+  test("discovers direct Anthropic text models from models.dev", async () => {
+    const fetchMock = mockFetch(() => ({
+      anthropic: {
+        models: {
+          "claude-opus-4-8": {
+            name: "Claude Opus 4.8",
+            modalities: { output: ["text"] },
+            cost: { input: 5, output: 25 },
+            limit: { context: 1_000_000, output: 128_000 },
+          },
+          "future-image": {
+            modalities: { output: ["image"] },
+          },
+        },
+      },
+      openai: {
+        models: {
+          "gpt-5.5": { modalities: { output: ["text"] } },
+        },
+      },
+    }));
+
+    const result = await fetchModelCatalog("anthropic", {
+      cache: false,
+      fetch: fetchMock,
+    });
+
+    expect(result.text.some((model) => model.id === "claude-opus-4-8")).toBe(
+      true
+    );
+    expect(result.lookup.some((model) => model.id === "gpt-5.5")).toBe(false);
+    expect(result.image).toEqual([]);
+  });
+
   test("discovers models from a local OpenAI-compatible endpoint", async () => {
     process.env.OMLX_BASE_URL = "http://127.0.0.1:9000/v1/";
     process.env.OMLX_API_KEY = "local-secret";
@@ -282,6 +326,33 @@ describe("fetchModelCatalog", () => {
     expect(
       result.image.some((model) => model.id === "openai/gpt-image-2")
     ).toBe(true);
+  });
+
+  test("preserves stale cache when models.dev omits the provider", async () => {
+    const cacheDir = join(
+      "/tmp",
+      `ai-cli-model-test-${process.pid}-${Date.now()}`
+    );
+    process.env.AI_CLI_CACHE_DIR = cacheDir;
+    let response: unknown = {
+      anthropic: {
+        models: {
+          "cached-model": { modalities: { output: ["text"] } },
+        },
+      },
+    };
+    const fetchMock = mockFetch(() => response);
+
+    await fetchModelCatalog("anthropic", { fetch: fetchMock, now: 1_000 });
+    resetModelCache();
+    response = {};
+    const result = await fetchModelCatalog("anthropic", {
+      fetch: fetchMock,
+      now: 3_601_001,
+    });
+
+    expect(result.text.some((model) => model.id === "cached-model")).toBe(true);
+    await rm(cacheDir, { recursive: true, force: true });
   });
 
   test("reuses the local cache", async () => {

@@ -18,7 +18,7 @@ const items: readonly item[] = [
   {
     id: "003",
     title: "Live model discovery",
-    body: "OpenRouter models are fetched live. Direct metadata comes from models.dev, Ollama, and OMLX.",
+    body: "OpenRouter and local catalogs are fetched live. Direct Anthropic and OpenAI metadata comes from models.dev.",
   },
   {
     id: "004",

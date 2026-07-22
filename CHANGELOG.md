@@ -4,11 +4,12 @@
 
 ### Breaking Changes
 
-- Removed the previous hosted gateway. OpenRouter is now the default provider, with direct OpenAI and FAL adapters selected through `-P` or `AI_CLI_PROVIDER`.
+- Removed the previous hosted gateway. OpenRouter is now the default provider, with direct Anthropic, OpenAI and FAL adapters selected through `-P` or `AI_CLI_PROVIDER`.
 - Model discovery now uses OpenRouter for routed models and models.dev for direct-provider metadata. Catalogs are cached locally and never block explicit model generation.
 
 ### New Features
 
+- Added direct Anthropic text and vision support through `ANTHROPIC_API_KEY`, with live model metadata from models.dev.
 - Added local Ollama and OMLX text providers with live model discovery, optional endpoint authentication, and vision input for capable models.
 - Added provider-qualified model IDs so cloud and local models can run concurrently in one command. `ai models -P all` lists qualified references across catalogs.
 

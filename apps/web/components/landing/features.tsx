@@ -173,7 +173,7 @@ export function Features() {
           <Spotlight
             tone="iron"
             title="Choose how you connect."
-            description="Use OpenRouter for broad model access, connect directly to OpenAI and FAL, or run Ollama and OMLX models locally."
+            description="Use OpenRouter for broad model access, connect directly to Anthropic, OpenAI and FAL, or run Ollama and OMLX models locally."
             bullets={[
               "explicit provider selection with no silent fallback",
               "live OpenRouter and models.dev catalogs",

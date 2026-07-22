@@ -1,6 +1,6 @@
 # ai
 
-A tiny, agent-native CLI for generating images, video, audio and text with dead-simple commands, stdin support and predictable artifact outputs. Use OpenRouter, connect directly to OpenAI and FAL, or run local Ollama and OMLX models.
+A tiny, agent-native CLI for generating images, video, audio and text with dead-simple commands, stdin support and predictable artifact outputs. Use OpenRouter, connect directly to Anthropic, OpenAI and FAL, or run local Ollama and OMLX models.
 
 ## Install
 
@@ -16,6 +16,7 @@ Requires Node.js 22+. Cloud providers require their API key. Ollama and OMLX con
 ai image "a cute dog"
 ai video "a spinning triangle"
 ai text "explain quantum computing"
+ai text -P anthropic "explain quantum computing with Claude"
 ai text -P ollama -m qwen3 "explain this locally"
 ai audio speak -P openai "Thanks for trying ai-cli"
 ai audio transcribe -P openai recording.mp3
@@ -42,7 +43,7 @@ cat recording.mp3 | ai audio transcribe -P openai
 All commands support:
 
 ```
--P, --provider <name>    Default provider: openrouter, openai, fal, ollama, omlx
+-P, --provider <name>    Default provider: openrouter, anthropic, openai, fal, ollama, omlx
 -m, --model <id>         Model ID; prefix with provider: to mix providers
 -o, --output <path>      Output file path or directory
 -n, --count <n>          Number of generations per model (default: 1)
@@ -57,8 +58,9 @@ Use the model IDs shown by `ai models`. OpenRouter IDs include the creator prefi
 
 ```bash
 ai text -m openai/gpt-5.5 "hello"
+ai text -P anthropic -m claude-sonnet-4-6 "hello directly"
 ai text -P ollama -m qwen3:latest "hello locally"
-ai text -m "openrouter:anthropic/claude-sonnet-4,ollama:qwen3:latest,omlx:qwen3:thinking" "compare these"
+ai text -m "anthropic:claude-sonnet-4-6,openrouter:anthropic/claude-sonnet-4-6,ollama:qwen3:latest" "compare these"
 ai image -m openai/gpt-image-2 "a sunset"
 ai audio speak -P openai -m tts-1 "hello"
 ```
@@ -170,29 +172,26 @@ cat voice-note.mp3 | ai audio transcribe -P openai -o transcript.txt
 ### models
 
 ```
-[model]                  Show detailed info for a model (e.g. anthropic/claude-opus-4.6)
+[model]                  Show detailed info for a model (e.g. claude-sonnet-4-6)
 --type <type>            Filter by type: text, image, video, audio, speech, transcription
 --creator <name>         Filter by creator (e.g. openai, google)
 --json                   Output as JSON (includes descriptions)
 ```
 
-OpenRouter model availability is fetched live from OpenRouter. Direct OpenAI metadata comes from [models.dev](https://models.dev/). Ollama and OMLX models come from each server's `/v1/models` endpoint. Use `ai models -P all` to aggregate catalogs with provider-qualified references. Cloud catalogs are cached locally for one hour, and explicit model IDs do not depend on catalog discovery.
+OpenRouter model availability is fetched live from OpenRouter. Direct Anthropic and OpenAI metadata comes from [models.dev](https://models.dev/). Ollama and OMLX models come from each server's `/v1/models` endpoint. Use `ai models -P all` to aggregate catalogs with provider-qualified references. Cloud catalogs are cached locally for one hour, and explicit model IDs do not depend on catalog discovery.
 
 Pass a model ID to see its context window, max output, pricing and release date:
 
 ```
-$ ai models claude-opus-4.6
+$ ai models -P anthropic claude-sonnet-4-6
 
-Claude Opus 4.6  anthropic/claude-opus-4.6
-Released 2026-02-05 · tool-use · reasoning · vision · web-search
+Claude Sonnet 4.6  anthropic:claude-sonnet-4-6
+Released 2026-02-17
 
-  Context      1M
-  Max output   128K
-  Input        $5/M
-  Output       $25/M
-  Cache read   $0.5/M
-  Cache write  $6.25/M
-  Web search   $10/K + input costs
+  Context     1M
+  Max output  128K
+  Input       $3/M
+  Output      $15/M
 
 ```
 
@@ -201,19 +200,20 @@ Released 2026-02-05 · tool-use · reasoning · vision · web-search
 | Provider   | Text | Image | Video | Speech | Transcription |
 | ---------- | ---: | ----: | ----: | -----: | ------------: |
 | OpenRouter |  Yes |   Yes |   Yes |     No |            No |
+| Anthropic  |  Yes |    No |    No |     No |            No |
 | OpenAI     |  Yes |   Yes |    No |    Yes |           Yes |
 | FAL        |   No |   Yes |   Yes |    Yes |           Yes |
 | Ollama     |  Yes |    No |    No |     No |            No |
 | OMLX       |  Yes |    No |    No |     No |            No |
 
-Ollama and OMLX text models may accept image inputs when the selected local model supports vision. Provider selection is explicit. ai-cli never sends a request to a different provider as a fallback.
+Anthropic and capable Ollama or OMLX text models accept image inputs for vision. Provider selection is explicit. ai-cli never sends a request to a different provider as a fallback.
 
 ### Multi-Model Comparison
 
 Generate with multiple models by comma-separating `-m`. Provider-qualified IDs can run cloud and local models concurrently:
 
 ```bash
-ai text "compare these approaches" -m "openrouter:anthropic/claude-sonnet-4,ollama:qwen3:latest,omlx:qwen3:thinking"
+ai text "compare these approaches" -m "anthropic:claude-sonnet-4-6,openrouter:anthropic/claude-sonnet-4-6,ollama:qwen3:latest"
 ai image "a sunset" -m "openai/gpt-image-1,xai/grok-imagine-image,bfl/flux-2-pro"
 ```
 
@@ -241,8 +241,9 @@ When the CLI needs to choose a filename, it uses a response id when available an
 
 | Variable                     | Description                                                 |
 | ---------------------------- | ----------------------------------------------------------- |
-| `AI_CLI_PROVIDER`            | Default: `openrouter`, `openai`, `fal`, `ollama`, or `omlx` |
+| `AI_CLI_PROVIDER`            | Default: `openrouter`, `anthropic`, `openai`, `fal`, `ollama`, or `omlx` |
 | `OPENROUTER_API_KEY`         | OpenRouter API key                                          |
+| `ANTHROPIC_API_KEY`          | Anthropic API key                                           |
 | `OPENAI_API_KEY`             | OpenAI API key                                              |
 | `FAL_API_KEY` / `FAL_KEY`    | FAL API key                                                 |
 | `OLLAMA_BASE_URL`            | Ollama API URL (default: `http://127.0.0.1:11434/v1`)       |

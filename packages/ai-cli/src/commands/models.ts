@@ -193,11 +193,11 @@ export function registerModelsCommand(program: Command) {
     .description("List available models for a provider")
     .argument(
       "[model]",
-      "Show detailed info for a model (e.g. anthropic/claude-opus-4.6)"
+      "Show detailed info for a model (e.g. anthropic/claude-sonnet-4.6)"
     )
     .option(
       "-P, --provider <provider>",
-      "Provider: openrouter, openai, fal, ollama, omlx, all (default: openrouter)"
+      "Provider: openrouter, anthropic, openai, fal, ollama, omlx, all (default: openrouter)"
     )
     .option(
       "--type <type>",
