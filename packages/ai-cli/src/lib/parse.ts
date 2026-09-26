@@ -17,10 +17,10 @@ export function parseNonNegativeFloat(value: string, name: string): number {
   return n;
 }
 
-export function parseSize(value: string): `${number}x${number}` {
+export function parseSize(value: string, name = "size"): `${number}x${number}` {
   if (!/^\d+x\d+$/.test(value)) {
     throw new Error(
-      `--size must be in WxH format (e.g. 1024x1024), got "${value}"`
+      `--${name} must be in WxH format (e.g. 1024x1024), got "${value}"`
     );
   }
   return value as `${number}x${number}`;

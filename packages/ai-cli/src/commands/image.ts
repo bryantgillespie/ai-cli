@@ -1,6 +1,6 @@
 import { generateImage } from "ai";
-import type { Command } from "commander";
 
+import type { Command } from "../lib/command.js";
 import {
   collectImageReference,
   loadImageReferences,
@@ -17,6 +17,7 @@ import {
 } from "../lib/providers.js";
 import { responseIdFromHeaders } from "../lib/response-id.js";
 import { readStdin } from "../lib/stdin.js";
+import { addTimeoutOption, timeoutMs } from "../lib/timeout.js";
 
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -35,10 +36,11 @@ interface ImageOptions {
   json?: boolean;
   concurrency?: string;
   preview?: boolean;
+  timeout: number;
 }
 
 export function registerImageCommand(program: Command) {
-  program
+  const command = program
     .command("image")
     .description("Generate an image from a prompt")
     .argument("[prompt]", "The prompt to generate an image from")
@@ -71,8 +73,9 @@ export function registerImageCommand(program: Command) {
     .option(
       "-p, --concurrency <n>",
       `Max parallel generations (default: ${DEFAULT_CONCURRENCY})`
-    )
-    .action(async (rawPrompt: string | undefined, opts: ImageOptions) => {
+    );
+  addTimeoutOption(command, DEFAULT_TIMEOUT_MS).action(
+    async (rawPrompt: string | undefined, opts: ImageOptions) => {
       const prompt = rawPrompt?.trim() || undefined;
       const stdin = await readStdin();
       const imageReferenceInputs = opts.image ?? [];
@@ -130,7 +133,7 @@ export function registerImageCommand(program: Command) {
       const { total, failed } = await runJobs(
         jobs,
         async (target) => {
-          const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+          const abort = AbortSignal.timeout(timeoutMs(opts.timeout));
           const providerOptions = imageProviderOptions(target.provider, opts);
           const result = await generateImage({
             model: getImageModel(providerFor(target.provider), target.modelId),
@@ -147,6 +150,7 @@ export function registerImageCommand(program: Command) {
           return {
             data: Buffer.from(result.image.uint8Array),
             id: responseIdFromHeaders(result.responses[0]?.headers),
+            mediaType: result.image.mediaType,
           };
         },
         {
@@ -163,12 +167,13 @@ export function registerImageCommand(program: Command) {
       );
       if (failed === total) process.exit(1);
       if (failed > 0) process.exit(2);
-    });
+    }
+  );
 }
 
 export function imageProviderOptions(
   provider: ProviderId,
-  opts: ImageOptions
+  opts: Pick<ImageOptions, "quality" | "style">
 ): Record<string, Record<string, string>> {
   if (provider === "openai" && (opts.quality || opts.style)) {
     return {

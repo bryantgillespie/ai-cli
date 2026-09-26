@@ -56,9 +56,24 @@ echo "Ship the changelog" | ai audio speak -P openai -o changelog.mp3
 cat recording.mp3 | ai audio transcribe -P openai -o transcript.txt
 ```
 
+### Evaluate
+
+`evaluate` reads finite input through EOF and evaluates named typed questions together.
+Text keeps whitespace; JSON objects and arrays remain one shared state. It always
+prints JSON answers and metadata in terminals and pipes, without writing files.
+
+```bash
+ai evaluate --boolean "refund=Refund requested?" < ticket.txt |
+  jq '.answers.refund.probability'
+ai evaluate --questions triage.json < ticket.json
+```
+
+Use `--input text` for literal JSON-looking text, or `--input json` to require JSON.
+See [Evaluate](/docs/evaluate) for question types, probability semantics, and format flags.
+
 ## Stdout
 
-Output behavior changes based on whether stdout is a TTY (interactive terminal) or a pipe:
+For generation commands, output behavior changes based on whether stdout is a TTY (interactive terminal) or a pipe:
 
 ### Interactive (TTY)
 
@@ -66,7 +81,7 @@ Saves to a file and prints the path to stderr:
 
 ```bash
 ai text "hello"         # → saves <id>.md, prints "Saved to /path/<id>.md"
-ai image "a cat"        # → saves <id>.png
+ai image "a cat"        # → saves <id>.<format>
 ai video "ocean"        # → saves <id>.mp4
 ai audio speak -P openai "hello"  # → saves <id>.mp3
 ```
@@ -94,16 +109,16 @@ ai audio transcribe -P openai call.mp3 -o call.txt   # transcript file
 
 When `-o` points to a directory, files use response IDs when available and random 8-character names otherwise.
 
-The `AI_CLI_OUTPUT_DIR` environment variable sets a default output directory:
+The `AI_CLI_OUTPUT_DIR` environment variable sets a default directory for generated artifacts. `evaluate` always uses stdout and does not use this setting:
 
 ```bash
 export AI_CLI_OUTPUT_DIR=~/ai-output
-ai image "a sunset"    # → saves to ~/ai-output/<id>.png
+ai image "a sunset"    # → saves to ~/ai-output/<id>.<format>
 ```
 
 ## JSON metadata
 
-Use `--json` to get structured metadata on stdout instead of raw output:
+Generation commands use `--json` to get structured metadata on stdout instead of raw output:
 
 ```bash
 ai image "a sunset" --json
@@ -119,7 +134,7 @@ ai image "a sunset" --json
       "model": "openai/gpt-image-2",
       "elapsed_ms": 3420,
       "success": true,
-      "file": "/Users/you/resp_abc123.png"
+      "file": "/Users/you/resp_abc123.<format>"
     }
   ]
 }

@@ -4,8 +4,8 @@ import {
   type ModelMessage,
   type TextPart,
 } from "ai";
-import type { Command } from "commander";
 
+import type { Command } from "../lib/command.js";
 import {
   collectImageReference,
   isLikelyImage,
@@ -22,6 +22,7 @@ import {
   resolveProviderId,
 } from "../lib/providers.js";
 import { readStdin, stdinAsText } from "../lib/stdin.js";
+import { addTimeoutOption, timeoutMs } from "../lib/timeout.js";
 
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -39,6 +40,7 @@ interface TextOptions {
   concurrency?: string;
   quiet?: boolean;
   json?: boolean;
+  timeout: number;
 }
 
 type TextPrompt = string | ModelMessage[];
@@ -50,7 +52,7 @@ function resolveFormat(fmt?: string): OutputFormat {
 }
 
 export function registerTextCommand(program: Command) {
-  program
+  const command = program
     .command("text")
     .description("Generate text from a prompt")
     .argument("[prompt]", "The prompt to generate text from")
@@ -79,8 +81,9 @@ export function registerTextCommand(program: Command) {
     .option("--max-tokens <n>", "Maximum tokens to generate")
     .option("-t, --temperature <n>", "Temperature (0-2)")
     .option("-q, --quiet", "Suppress progress output")
-    .option("--json", "Output metadata as JSON")
-    .action(async (rawPrompt: string | undefined, opts: TextOptions) => {
+    .option("--json", "Output metadata as JSON");
+  addTimeoutOption(command, DEFAULT_TIMEOUT_MS).action(
+    async (rawPrompt: string | undefined, opts: TextOptions) => {
       const prompt = rawPrompt?.trim() || undefined;
       const stdin = await readStdin();
       const imageReferenceInputs = opts.image ?? [];
@@ -128,7 +131,7 @@ export function registerTextCommand(program: Command) {
       const { total, failed } = await runJobs(
         jobs,
         async (target) => {
-          const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+          const abort = AbortSignal.timeout(timeoutMs(opts.timeout));
           const result = await generateText({
             model: getLanguageModel(
               providerFor(target.provider),
@@ -156,7 +159,8 @@ export function registerTextCommand(program: Command) {
       );
       if (failed === total) process.exit(1);
       if (failed > 0) process.exit(2);
-    });
+    }
+  );
 }
 
 function buildTextPrompt({

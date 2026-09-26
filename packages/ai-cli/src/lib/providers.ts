@@ -5,6 +5,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   experimental_generateVideo,
+  type Experimental_EvaluationModel as EvaluationModel,
   type ImageModel,
   type LanguageModel,
   type SpeechModel,
@@ -31,6 +32,7 @@ export interface ProviderAdapter {
   videoModel?: (modelId: string) => VideoModel;
   speechModel?: (modelId: string) => SpeechModel;
   transcriptionModel?: (modelId: string) => TranscriptionModel;
+  evaluationModel?: (modelId: string) => EvaluationModel;
 }
 
 export function resolveProviderId(input?: string): ProviderId {
@@ -56,6 +58,7 @@ export function createProvider(input?: string): ProviderAdapter {
         languageModel: (modelId) => provider.chat(modelId),
         imageModel: (modelId) => provider.imageModel(modelId),
         videoModel: (modelId) => provider.videoModel(modelId),
+        evaluationModel: (modelId) => provider.evaluationModel(modelId),
       };
     }
     case "anthropic": {
@@ -65,6 +68,7 @@ export function createProvider(input?: string): ProviderAdapter {
       return {
         id,
         languageModel: (modelId) => provider(modelId),
+        evaluationModel: (modelId) => provider.evaluationModel(modelId),
       };
     }
     case "openai": {
@@ -75,6 +79,7 @@ export function createProvider(input?: string): ProviderAdapter {
         imageModel: (modelId) => provider.image(modelId),
         speechModel: (modelId) => provider.speech(modelId),
         transcriptionModel: (modelId) => provider.transcription(modelId),
+        evaluationModel: (modelId) => provider.evaluationModel(modelId),
       };
     }
     case "fal": {
@@ -174,6 +179,17 @@ export function getTranscriptionModel(
     provider,
     "transcription",
     provider.transcriptionModel
+  )(modelId);
+}
+
+export function getEvaluationModel(
+  provider: ProviderAdapter,
+  modelId: string
+): EvaluationModel {
+  return requireCapability(
+    provider,
+    "evaluation",
+    provider.evaluationModel
   )(modelId);
 }
 

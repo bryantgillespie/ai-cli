@@ -8,7 +8,13 @@ import {
   type ProviderId,
 } from "./providers.js";
 
-export type Modality = "text" | "image" | "video" | "speech" | "transcription";
+export type Modality =
+  | "text"
+  | "image"
+  | "video"
+  | "speech"
+  | "transcription"
+  | "evaluation";
 
 const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
   openrouter: {
@@ -17,6 +23,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "bytedance/seedance-2.0",
     speech: "",
     transcription: "",
+    evaluation: "typesafe/jev-router",
   },
   anthropic: {
     text: "claude-sonnet-4-6",
@@ -24,6 +31,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "",
     transcription: "",
+    evaluation: "claude-sonnet-4-6",
   },
   openai: {
     text: "gpt-5.5",
@@ -31,6 +39,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "tts-1",
     transcription: "whisper-1",
+    evaluation: "gpt-5.5",
   },
   fal: {
     text: "",
@@ -38,6 +47,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "fal-ai/luma-dream-machine/ray-2",
     speech: "fal-ai/minimax/speech-02-hd",
     transcription: "whisper",
+    evaluation: "",
   },
   ollama: {
     text: null,
@@ -45,6 +55,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "",
     transcription: "",
+    evaluation: "",
   },
   omlx: {
     text: null,
@@ -52,6 +63,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "",
     transcription: "",
+    evaluation: "",
   },
 };
 
@@ -91,6 +103,7 @@ export interface ModelCatalog {
   video: ModelEntry[];
   speech: ModelEntry[];
   transcription: ModelEntry[];
+  evaluation: ModelEntry[];
   all: ModelEntry[];
   lookup: ModelEntry[];
 }
@@ -153,10 +166,15 @@ const BUILTIN_MODELS: Record<ProviderId, ModelEntry[]> = {
     entry("openai/gpt-5.5", "text"),
     entry("openai/gpt-image-2", "image"),
     entry("bytedance/seedance-2.0", "video"),
+    entry("typesafe/jev-router", "evaluation"),
   ],
-  anthropic: [entry("claude-sonnet-4-6", "text", "anthropic")],
+  anthropic: [
+    entry("claude-sonnet-4-6", "text", "anthropic"),
+    entry("claude-sonnet-4-6", "evaluation", "anthropic"),
+  ],
   openai: [
     entry("gpt-5.5", "text", "openai"),
+    entry("gpt-5.5", "evaluation", "openai"),
     entry("gpt-image-2", "image", "openai"),
     entry("tts-1", "speech", "openai"),
     entry("whisper-1", "transcription", "openai"),
@@ -342,6 +360,7 @@ function buildCatalog(provider: ProviderId, input: ModelEntry[]): ModelCatalog {
     video: byCapability("video"),
     speech: byCapability("speech"),
     transcription: byCapability("transcription"),
+    evaluation: byCapability("evaluation"),
     all: lookup.filter((model) => model.capabilities.length > 0),
     lookup,
   };
@@ -471,7 +490,14 @@ function isModelEntry(value: unknown): value is ModelEntry {
     typeof model.creator === "string" &&
     Array.isArray(model.capabilities) &&
     model.capabilities.every((item) =>
-      ["text", "image", "video", "speech", "transcription"].includes(item)
+      [
+        "text",
+        "image",
+        "video",
+        "speech",
+        "transcription",
+        "evaluation",
+      ].includes(item)
     )
   );
 }

@@ -21,17 +21,18 @@ Anthropic and capable Ollama or OMLX text models accept image inputs for vision.
 
 ## Default models
 
-Defaults depend on the selected provider. Override them with `AI_CLI_TEXT_MODEL`, `AI_CLI_IMAGE_MODEL`, `AI_CLI_VIDEO_MODEL`, `AI_CLI_SPEECH_MODEL`, and `AI_CLI_TRANSCRIPTION_MODEL`.
+Defaults depend on the selected provider. Override them with `AI_CLI_TEXT_MODEL`, `AI_CLI_IMAGE_MODEL`, `AI_CLI_VIDEO_MODEL`, `AI_CLI_SPEECH_MODEL`, `AI_CLI_TRANSCRIPTION_MODEL`, and `AI_CLI_EVALUATION_MODEL`.
 
 OpenRouter defaults:
 
-| Type  | Default                  |
-| ----- | ------------------------ |
-| text  | `openai/gpt-5.5`         |
-| image | `openai/gpt-image-2`     |
-| video | `bytedance/seedance-2.0` |
+| Type                  | Default                  |
+| --------------------- | ------------------------ |
+| text                  | `openai/gpt-5.5`         |
+| image                 | `openai/gpt-image-2`     |
+| video                 | `bytedance/seedance-2.0` |
+| evaluation (evaluate) | `typesafe/jev-router`    |
 
-Anthropic defaults to `claude-sonnet-4-6`. OpenAI defaults use `gpt-5.5`, `gpt-image-2`, `tts-1`, and `whisper-1`. FAL defaults use `fal-ai/flux-pro/v1.1-ultra`, `fal-ai/luma-dream-machine/ray-2`, `fal-ai/minimax/speech-02-hd`, and `whisper`. Ollama and OMLX require an explicit model through `-m` or `AI_CLI_TEXT_MODEL`.
+Anthropic defaults to `claude-sonnet-4-6` for text and evaluation. OpenAI defaults use `gpt-5.5` (text and evaluation), `gpt-image-2`, `tts-1`, and `whisper-1`. FAL defaults use `fal-ai/flux-pro/v1.1-ultra`, `fal-ai/luma-dream-machine/ray-2`, `fal-ai/minimax/speech-02-hd`, and `whisper`. Ollama and OMLX require an explicit model through `-m` or `AI_CLI_TEXT_MODEL`.
 
 ## Specifying a model
 
@@ -46,7 +47,6 @@ ai audio speak -P openai -m "tts-1" "hello"
 ```
 
 Prefix a model with `<provider>:` to override the default provider for that model. Only the first colon is a separator, so `ollama:qwen3:latest` routes `qwen3:latest` to Ollama.
-
 ## Multi-model comparison
 
 Generate with multiple models by comma-separating `-m`. Cloud and local models can run concurrently:
@@ -58,6 +58,8 @@ ai image "a sunset" -m "openai/gpt-image-2,google/gemini-3-pro-image"
 
 Combine with `-n` to generate multiple outputs per model.
 
+`evaluate` accepts exactly one evaluation model per invocation and does not fall back to text generation models.
+
 ## Listing models
 
 ```bash
@@ -68,6 +70,7 @@ ai models -P fal --type video          # FAL video models
 ai models -P ollama --type text        # models installed in Ollama
 ai models -P omlx --type text          # models served by OMLX
 ai models -P all                       # every catalog, with provider prefixes
+ai models --type evaluation            # evaluation models such as Jev
 ai models --creator google             # Google models through OpenRouter
 ai models --json                       # machine-readable output
 ```

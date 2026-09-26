@@ -6,16 +6,91 @@
 
 - Removed the previous hosted gateway. OpenRouter is now the default provider, with direct Anthropic, OpenAI and FAL adapters selected through `-P` or `AI_CLI_PROVIDER`.
 - Model discovery now uses OpenRouter for routed models and models.dev for direct-provider metadata. Catalogs are cached locally and never block explicit model generation.
+- Quiver Arrow SVG output is not carried over from 0.5.2 because those models are only available through the hosted gateway.
 
 ### New Features
 
 - Added direct Anthropic text and vision support through `ANTHROPIC_API_KEY`, with live model metadata from models.dev.
 - Added local Ollama and OMLX text providers with live model discovery, optional endpoint authentication, and vision input for capable models.
 - Added provider-qualified model IDs so cloud and local models can run concurrently in one command. `ai models -P all` lists qualified references across catalogs.
+- `ai evaluate` runs on OpenRouter (`typesafe/jev-router` by default), OpenAI or Anthropic evaluation models. Pick one with `-P` or a provider-qualified `-m`.
 
-## 0.4.2
+## 0.5.2
 
 <!-- release:start -->
+
+### Bug Fixes
+
+- **Quiver Arrow SVG output** - `ai image` now extracts SVG markup returned by Arrow 2 and Arrow 2 Telos, saves SVG output from all Arrow image models with the `.svg` extension, and displays larger SVG previews on a white background
+
+### Contributors
+
+- @ctate
+
+<!-- release:end -->
+
+## 0.5.1
+
+### New Features
+
+- **AI SDK evaluation** - `ai evaluate` exposes AI SDK’s evaluation API with typed shell flags or a full JSON question map. Boolean, Choice, and Score questions share intact text or JSON state. Output preserves the SDK result, including probabilities, usage, provider metadata, and response information. Jev is the default evaluation model.
+- **Evaluation model discovery** - `ai models --type evaluation` lists evaluation models; `AI_CLI_EVALUATION_MODEL` configures the evaluate default
+
+### Contributors
+
+- @ctate
+
+## 0.5.0
+
+### New Features
+
+- **Semantic record commands** - `ai filter`, `ai rank`, and `ai pick` evaluate lines, JSON arrays, and JSONL with Jev through AI Gateway, preserving selected records and exposing probabilities, scores, usage, and timing with `--json`
+- **Evaluation model discovery** - `ai models --type evaluation` lists evaluation models; `AI_CLI_EVALUATION_MODEL` configures the decision-command default
+
+### Bug Fixes
+
+- **Slow stdin pipelines** - commands wait for upstream output through EOF instead of discarding input if the first byte arrives after one second
+- **Fail-fast record evaluation** - decision commands stop pending batches and cancel in-flight evaluation requests after the first batch failure
+
+### Contributors
+
+- @ctate
+
+## 0.4.4
+
+### New Features
+
+- **Video resolution** - `ai video --resolution <WxH>` requests an explicit output resolution such as `1920x1080` from supported video models
+
+### Bug Fixes
+
+- **Non-PNG image previews** - image models that return JPEG or WebP data now display correctly in Kitty-compatible terminals while preserving the original format in saved files
+
+### Contributors
+
+- @Railly
+- @ctate
+
+## 0.4.3
+
+### New Features
+
+- **Configurable request timeouts** - `--timeout <seconds>` lets text, image, video and audio requests run longer than their per-command defaults, with validation for invalid or overflowing values (#79)
+
+### Improvements
+
+- **Leaner CLI runtime** - replaced the Commander dependency with a focused local argument parser while preserving existing CLI behavior (#77)
+
+### Bug Fixes
+
+- **Invalid model ID errors** - model IDs containing Unicode characters or spaces now fail immediately with an actionable validation error instead of being retried and reported as an invalid AI Gateway response (#80)
+
+### Contributors
+
+- @Railly
+- @ctate
+
+## 0.4.2
 
 ### New Features
 
@@ -25,11 +100,7 @@
 
 - @ctate
 
-<!-- release:end -->
-
 ## 0.4.1
-
-<!-- release:start -->
 
 ### Bug Fixes
 
@@ -39,11 +110,7 @@
 
 - @ctate
 
-<!-- release:end -->
-
 ## 0.4.0
-
-<!-- release:start -->
 
 ### New Features
 
@@ -64,11 +131,7 @@
 - @piotrjoniec
 - @ctate
 
-<!-- release:end -->
-
 ## 0.3.1
-
-<!-- release:start -->
 
 ### New Features
 
@@ -83,11 +146,7 @@
 
 - @ctate
 
-<!-- release:end -->
-
 ## 0.3.0
-
-<!-- release:start -->
 
 ### New Features
 
@@ -98,11 +157,7 @@
 
 - @ctate
 
-<!-- release:end -->
-
 ## 0.2.1
-
-<!-- release:start -->
 
 ### Bug Fixes
 
@@ -116,11 +171,7 @@
 
 - @ctate
 
-<!-- release:end -->
-
 ## 0.2.0
-
-<!-- release:start -->
 
 ### New Features
 
@@ -152,11 +203,7 @@
 - @ctate
 - @dancer
 
-<!-- release:end -->
-
 ## 0.1.1
-
-<!-- release:start -->
 
 ### Improvements
 
@@ -165,8 +212,6 @@
 ### Contributors
 
 - @ctate
-
-<!-- release:end -->
 
 ## 0.1.0
 
@@ -177,5 +222,3 @@
 - H.264 keyframe decoding via OpenH264 WASM — no native dependencies required
 - Stdin piping support for chaining commands
 - Shell completions for bash, zsh, and fish
-
-<!-- release:end -->

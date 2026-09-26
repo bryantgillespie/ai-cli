@@ -1,6 +1,6 @@
 ---
 name: ai-cli
-description: Runs ai-cli to generate text, images, video, speech, and transcripts with cloud or local models. Use when the user asks to generate AI media, invoke OpenRouter/Anthropic/OpenAI/FAL/Ollama/OMLX, compare models, or compose terminal AI pipelines.
+description: Runs ai-cli to generate text, images, video, speech, and transcripts with cloud or local models, and to evaluate typed questions. Use when the user asks to generate AI media, invoke OpenRouter/Anthropic/OpenAI/FAL/Ollama/OMLX, compare models, score or classify input, or compose terminal AI pipelines.
 ---
 
 # ai-cli
@@ -13,6 +13,7 @@ ai image "a letterpress poster"
 ai video "a paper airplane unfolding"
 ai audio speak -P openai "hello"
 ai audio transcribe -P openai recording.mp3
+ai evaluate --boolean "refund=Refund requested?" < ticket.txt
 ai models
 ```
 
@@ -67,7 +68,12 @@ ai text "summarize" -o /tmp/summary.md --json
 ```
 
 JSON results contain `provider`, native `model`, success, timing, and file path.
-Exit code `0` means success, `1` all failed, and `2` partial failure.
+Exit code `0` means success, `1` invalid input or all failed, and `2` partial failure.
+
+Use `--timeout <seconds>` when a request legitimately needs longer than the
+default (text and speech 120, image and video 300, evaluate 30) instead of
+switching to a faster model. `ai video --resolution 1920x1080` requests a
+resolution; support varies by model.
 
 Without `-o`, text writes to stdout when piped; image, video, and speech write
 raw binary. Never let raw binary enter agent context.
@@ -80,6 +86,28 @@ cat screenshot.png | ai text -P anthropic -m claude-sonnet-4-6 "describe errors"
 ai image "a dragon" | ai video "animate this"
 cat recording.mp3 | ai audio transcribe -P openai -o /tmp/transcript.txt
 ```
+
+## Evaluate
+
+`ai evaluate` asks named Boolean, Choice, and Score questions about stdin and
+always prints the SDK result as JSON. It defaults to Jev
+(`openrouter:typesafe/jev-router`); `-P openai` or `-P anthropic` switches
+providers.
+
+```bash
+cat ticket.txt |
+  ai evaluate \
+    --boolean "refund=Refund requested?" \
+    --choice "team=Which team?" --choices "team=billing,support" \
+    --score "tone=How positive?" --levels "tone=angry,neutral,happy"
+ai evaluate --questions triage.json < ticket.json |
+  jq -e '.answers.refund.probability >= 0.9'
+```
+
+Boolean returns `probability` (P(true)); Choice returns `choice`; Score returns
+a fractional `score` index into the levels. Keep arithmetic and date comparisons
+in code, and supply any reference date the question needs. See
+https://ai-cli.dev/docs/evaluate for the question file schema.
 
 ## Failure checks
 

@@ -5,19 +5,26 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "bun test"
   },
   "dependencies": {
+    "@vercel/agent-readability": "0.5.1",
     "fromsrc": "0.0.23",
     "geist": "^1.4.0",
     "next": "16.2.1",
     "next-mdx-remote": "^6.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "remark-mdx": "3.1.1",
+    "remark-parse": "11.0.0",
+    "remark-stringify": "11.0.0",
+    "unified": "11.0.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/mdast": "4.0.4",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

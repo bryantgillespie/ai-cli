@@ -1,0 +1,214 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 99e726cd96866bf2a10ce8c949f41b0d55e68ebc..17b2876341f6950b6bfdc57dd6a053f4c709473f 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,7 +1,5 @@
+ import { EmbeddingModelV4Embedding, EmbeddingModelV4, EmbeddingModelV3, EmbeddingModelV2, EmbeddingModelV4Middleware, ImageModelV4ProviderMetadata, ImageModelV2ProviderMetadata, ImageModelV4, ImageModelV3, ImageModelV2, ImageModelV4Middleware, JSONValue as JSONValue$1, LanguageModelV4Source, SharedV4Warning, LanguageModelV4, LanguageModelV3, LanguageModelV2, LanguageModelV4Middleware, RerankingModelV4, RerankingModelV3, SharedV4ProviderMetadata, SharedV4ProviderReference, SpeechModelV4, SpeechModelV3, SpeechModelV2, TranscriptionModelV4, TranscriptionModelV3, TranscriptionModelV2, JSONObject, ImageModelV4Usage, Experimental_EvaluationModelV4Question, Experimental_EvaluationModelV4Result, Experimental_EvaluationModelV4, Experimental_EvaluationModelV4CallOptions, LanguageModelV4CallOptions, LanguageModelV4Prompt, AISDKError, LanguageModelV4ToolCall, JSONSchema7, ProviderV4, ProviderV3, ProviderV2, SharedV4Headers, Experimental_BatchV4Status, Experimental_BatchV4Error, Experimental_BatchV4, Experimental_BatchV4ModelIds, Experimental_BatchV4StartResult, LanguageModelV4ToolChoice, LanguageModelV4Content, JSONParseError, TypeValidationError, Experimental_VideoModelV4, Experimental_VideoModelV3, Experimental_VideoModelV4FrameType, Experimental_VideoModelV4OperationWebhook, Experimental_VideoModelV4OperationStatusResult, EmbeddingModelV4CallOptions, Experimental_RealtimeModelV4ServerEvent, Experimental_RealtimeModelV4, Experimental_RealtimeModelV4SessionConfig, Experimental_RealtimeModelV4ClientEvent, Experimental_RealtimeFactoryV4, Experimental_RealtimeFactoryV4GetTokenOptions, Experimental_RealtimeFactoryV4GetTokenResult, Experimental_RealtimeModelV4ToolDefinition, FilesV4, SkillsV4, NoSuchModelError, SharedV4AudioFormat, Experimental_SpeechTranslationModelV4, Experimental_SpeechTranslationModelV4Usage, FilesV4UploadFileCallOptions, SkillsV4UploadSkillResult, SkillsV4UploadSkillCallOptions, SkillsV4File } from '@ai-sdk/provider';
+ export { AISDKError, APICallError, EmptyResponseBodyError, Experimental_EvaluationUnsupportedQuestionTypeError, InvalidPromptError, InvalidResponseDataError, JSONParseError, JSONSchema7, LoadAPIKeyError, LoadSettingError, NoContentGeneratedError, NoSuchModelError, NoSuchProviderReferenceError, TooManyEmbeddingValuesForCallError, TypeValidationError, UnsupportedFunctionalityError } from '@ai-sdk/provider';
+-import { GatewayModelId } from '@ai-sdk/gateway';
+-export { GatewayAsyncJobMetadata, GatewayModelId, GatewayProviderMetadata, createGateway, gateway } from '@ai-sdk/gateway';
+ import * as _ai_sdk_provider_utils from '@ai-sdk/provider-utils';
+ import { ModelMessage, AssistantModelMessage, ToolModelMessage, Context, ProviderOptions, ToolSet, SystemModelMessage, UserModelMessage, DataContent, FlexibleSchema, InferSchema, InferToolSetContext, Arrayable, InferToolInput, InferToolOutput, ReasoningPart, ReasoningFilePart, Experimental_SandboxSession, Tool, ToolCall, IdGenerator, MaybePromiseLike, ToolExecutionOptions, InferToolContext, Experimental_ToolCallerTool, HasRequiredKey, TextPart, FilePart, Resolvable, FetchFunction } from '@ai-sdk/provider-utils';
+ export { AssistantContent, AssistantModelMessage, DataContent, DownloadError, Experimental_SandboxProcess, Experimental_SandboxSession, Experimental_ToolCallerTool, FilePart, FlexibleSchema, IdGenerator, ImagePart, InferSchema, InferToolInput, InferToolOutput, ModelMessage, Schema, SystemModelMessage, TextPart, Tool, ToolApprovalRequest, ToolApprovalResponse, ToolCallPart, ToolContent, ToolExecuteFunction, ToolExecutionOptions, ToolModelMessage, ToolResultPart, ToolSet, UserContent, UserModelMessage, asSchema, createIdGenerator, dynamicTool, experimental_toolCaller, generateId, jsonSchema, parseJsonEventStream, tool, zodSchema } from '@ai-sdk/provider-utils';
+@@ -100,12 +98,12 @@ declare global {
+     }
+ }
+ /**
+- * Global provider model ID type that defaults to GatewayModelId but can be augmented
+- * by third-party packages via declaration merging.
++ * Global provider model ID type that can be augmented by third-party packages
++ * via declaration merging.
+  */
+ type GlobalProviderModelId = [keyof RegisteredProviderModels] extends [
+     never
+-] ? GatewayModelId : keyof RegisteredProviderModels | RegisteredProviderModels[keyof RegisteredProviderModels];
++] ? string : keyof RegisteredProviderModels | RegisteredProviderModels[keyof RegisteredProviderModels];
+ /**
+  * Language model that is used by the AI SDK.
+  */
+diff --git a/dist/index.js b/dist/index.js
+index fee1106e95e3cba266ad093bf77fed8ccf85a3b1..255340374de7355ef9c8662b01a84ee86fe3971a 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -5,10 +5,6 @@ var __export = (target, all) => {
+ };
+ 
+ // src/index.ts
+-import {
+-  createGateway,
+-  gateway as gateway3
+-} from "@ai-sdk/gateway";
+ import {
+   asSchema as asSchema8,
+   createIdGenerator as createIdGenerator10,
+@@ -689,7 +685,6 @@ var logWarnings = (options) => {
+ };
+ 
+ // src/model/resolve-model.ts
+-import { gateway } from "@ai-sdk/gateway";
+ import {
+   NoSuchModelError as NoSuchModelError2
+ } from "@ai-sdk/provider";
+@@ -1158,7 +1153,10 @@ function resolveTranscriptionModel(model) {
+ }
+ function resolveSpeechTranslationModel(model) {
+   if (typeof model === "string") {
+-    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER ?? gateway;
++    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER;
++    if (!provider) {
++      throw new Error("String model IDs require an explicitly registered default provider.");
++    }
+     const speechTranslationModel = provider.speechTranslationModel;
+     if (!speechTranslationModel) {
+       throw new Error(
+@@ -1207,7 +1205,10 @@ function resolveImageModel(model) {
+ }
+ function resolveVideoModel(model) {
+   if (typeof model === "string") {
+-    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER ?? gateway;
++    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER;
++    if (!provider) {
++      throw new Error("String model IDs require an explicitly registered default provider.");
++    }
+     const videoModel = provider.videoModel;
+     if (!videoModel) {
+       throw new Error(
+@@ -1232,7 +1233,7 @@ function resolveRerankingModel(model) {
+     const rerankingModel = provider.rerankingModel;
+     if (!rerankingModel) {
+       throw new Error(
+-        'The default provider does not support reranking models. Please use a RerankingModel object from a provider (e.g., gateway.rerankingModel("model-id")).'
++        'The default provider does not support reranking models. Please use a RerankingModel object from a provider.'
+       );
+     }
+     return rerankingModel(model);
+@@ -1249,7 +1250,10 @@ function resolveRerankingModel(model) {
+ }
+ function resolveEvaluationModel(model) {
+   if (typeof model === "string") {
+-    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER ?? gateway;
++    const provider = globalThis.AI_SDK_DEFAULT_PROVIDER;
++    if (!provider) {
++      throw new Error("String model IDs require an explicitly registered default provider.");
++    }
+     if (typeof provider?.evaluationModel !== "function") {
+       throw new NoSuchModelError2({
+         modelId: model,
+@@ -1276,7 +1280,10 @@ function resolveEvaluationModel(model) {
+   return model;
+ }
+ function getGlobalProvider() {
+-  const provider = globalThis.AI_SDK_DEFAULT_PROVIDER ?? gateway;
++  const provider = globalThis.AI_SDK_DEFAULT_PROVIDER;
++  if (!provider) {
++    throw new Error("String model IDs require an explicitly registered default provider.");
++  }
+   return asProviderV4(provider);
+ }
+ 
+@@ -2808,30 +2815,8 @@ async function standardizePrompt({
+ }
+ 
+ // src/prompt/wrap-gateway-error.ts
+-import { GatewayAuthenticationError } from "@ai-sdk/gateway";
+-import { AISDKError as AISDKError26 } from "@ai-sdk/provider";
+ function wrapGatewayError(error) {
+-  if (!GatewayAuthenticationError.isInstance(error)) return error;
+-  const isProductionEnv = process?.env.NODE_ENV === "production";
+-  const moreInfoURL = "https://ai-sdk.dev/unauthenticated-ai-gateway";
+-  if (isProductionEnv) {
+-    return new AISDKError26({
+-      name: "GatewayError",
+-      message: `Unauthenticated. Configure AI_GATEWAY_API_KEY or use a provider module. Learn more: ${moreInfoURL}`
+-    });
+-  }
+-  return Object.assign(
+-    new Error(`\x1B[1m\x1B[31mUnauthenticated request to AI Gateway.\x1B[0m
+-
+-To authenticate, set the \x1B[33mAI_GATEWAY_API_KEY\x1B[0m environment variable with your API key.
+-
+-Alternatively, you can use a provider module instead of the AI Gateway.
+-
+-Learn more: \x1B[34m${moreInfoURL}\x1B[0m
+-
+-`),
+-    { name: "GatewayAuthenticationError" }
+-  );
++  return error;
+ }
+ 
+ // src/types/usage.ts
+@@ -2948,7 +2933,6 @@ async function notify(options) {
+ 
+ // src/util/retry-with-exponential-backoff.ts
+ import { APICallError as APICallError2 } from "@ai-sdk/provider";
+-import { GatewayError } from "@ai-sdk/gateway";
+ import {
+   retryWithExponentialBackoff
+ } from "@ai-sdk/provider-utils";
+@@ -2991,7 +2975,7 @@ var retryWithExponentialBackoffRespectingRetryHeaders = ({
+   initialDelayInMs,
+   backoffFactor,
+   abortSignal,
+-  shouldRetry: async (error) => error instanceof Error && (APICallError2.isInstance(error) && error.isRetryable === true || GatewayError.isInstance(error) && error.isRetryable === true) || additionalRetryableError != null && await additionalRetryableError(error),
++  shouldRetry: async (error) => error instanceof Error && APICallError2.isInstance(error) && error.isRetryable === true || additionalRetryableError != null && await additionalRetryableError(error),
+   getDelayInMs: ({ error, exponentialBackoffDelay }) => getRetryDelayInMs({
+     error,
+     exponentialBackoffDelay
+@@ -13089,7 +13073,6 @@ async function pipeAgentUIStreamToResponse({
+ import {
+   UnsupportedFunctionalityError as UnsupportedFunctionalityError3
+ } from "@ai-sdk/provider";
+-import { gateway as gateway2 } from "@ai-sdk/gateway";
+ import {
+   detectMediaType as detectMediaType3,
+   withUserAgentSuffix as withUserAgentSuffix5
+@@ -13711,7 +13694,10 @@ function getBatchResults({
+   return asAsyncIterableStream(transform.readable);
+ }
+ function resolveBatchApi(provider) {
+-  provider ??= asProviderV4(globalThis.AI_SDK_DEFAULT_PROVIDER ?? gateway2);
++  provider ??= globalThis.AI_SDK_DEFAULT_PROVIDER && asProviderV4(globalThis.AI_SDK_DEFAULT_PROVIDER);
++  if (!provider) {
++    throw new Error("Batch APIs require a provider or an explicitly registered default provider.");
++  }
+   if (isBatchApi(provider)) {
+     return provider;
+   }
+@@ -21191,7 +21177,7 @@ function streamTranscribe({
+   if (doStream == null) {
+     throw new UnsupportedFunctionalityError7({
+       functionality: "streaming transcription",
+-      message: `The ${resolvedModel.provider} model "${resolvedModel.modelId}" does not support streaming transcription.` + (typeof model === "string" ? " String model IDs resolve through the global provider (AI Gateway by default). If that provider does not support streaming transcription, pass a provider model instance instead (e.g. openai.transcription('gpt-realtime-whisper')) or upgrade @ai-sdk/gateway to a version with streaming transcription support." : "")
++      message: `The ${resolvedModel.provider} model "${resolvedModel.modelId}" does not support streaming transcription.` + (typeof model === "string" ? " Pass a provider model instance instead, e.g. openai.transcription('gpt-realtime-whisper')." : "")
+     });
+   }
+   const headersWithUserAgent = withUserAgentSuffix15(
+@@ -22766,7 +22752,6 @@ export {
+   createAgentUIStream,
+   createAgentUIStreamResponse,
+   createDownload,
+-  createGateway,
+   createIdGenerator10 as createIdGenerator,
+   createProviderRegistry,
+   createTextStreamResponse,
+@@ -22804,7 +22789,6 @@ export {
+   extractJsonMiddleware,
+   extractReasoningMiddleware,
+   fingerprintTools,
+-  gateway3 as gateway,
+   generateId4 as generateId,
+   generateImage,
+   generateObject,
+diff --git a/package.json b/package.json
+index 6200f61449a46c0d30b18b23b0e1bf92bfd34f02..ee25cfa1636951147f18a7611eb29fc9ba6795e8 100644
+--- a/package.json
++++ b/package.json
+@@ -42,7 +42,6 @@
+     }
+   },
+   "dependencies": {
+-    "@ai-sdk/gateway": "4.0.94",
+     "@ai-sdk/provider": "4.0.18",
+     "@ai-sdk/provider-utils": "5.0.49"
+   },

@@ -1,8 +1,19 @@
+import type { Metadata } from "next";
+
 import { Bento } from "../components/landing/bento";
 import { Features } from "../components/landing/features";
 import { Footer } from "../components/landing/footer";
 import { Hero } from "../components/landing/hero";
 import { Nav } from "../components/landing/nav";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+    types: {
+      "text/markdown": "/index.md",
+    },
+  },
+};
 
 export default function Page() {
   return (

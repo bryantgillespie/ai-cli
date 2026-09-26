@@ -31,6 +31,9 @@ ai image "edit this" < photo.png
   <Property name="-p, --concurrency" type="number" default="4">
     Max parallel generations.
   </Property>
+  <Property name="--timeout" type="seconds" default="300">
+    Request timeout in seconds. Must be a positive integer.
+  </Property>
   <Property name="--size" type="WxH">
     Image size (e.g. `1024x1024`). Not supported by Gemini image models — use
     `--aspect-ratio` instead.
@@ -56,6 +59,11 @@ ai image "edit this" < photo.png
   </Property>
 </Properties>
 
+Generated image files preserve the format returned by the selected model when
+the model reports one (for example, JPEG, WebP, or SVG). In supported terminals, non-PNG images are converted to PNG
+for the inline Kitty graphics preview. SVG previews use a 512-pixel long edge
+and an opaque white background.
+
 ---
 
 ## video
@@ -64,6 +72,7 @@ Generate video from a prompt or image.
 
 ```bash
 ai video "a spinning triangle"
+ai video "a cinematic landscape" --resolution 1920x1080
 ai image "a dragon" | ai video "animate this"
 ```
 
@@ -85,8 +94,15 @@ ai image "a dragon" | ai video "animate this"
   <Property name="-p, --concurrency" type="number" default="2">
     Max parallel generations.
   </Property>
+  <Property name="--timeout" type="seconds" default="300">
+    Request timeout in seconds. Must be a positive integer.
+  </Property>
   <Property name="--aspect-ratio" type="W:H">
     Aspect ratio (e.g. `16:9`).
+  </Property>
+  <Property name="--resolution" type="WxH">
+    Video resolution (e.g. `1920x1080` for 1080p). Supported resolutions vary
+    by model.
   </Property>
   <Property name="--duration" type="seconds">
     Duration in seconds.
@@ -140,6 +156,9 @@ ai text "summarize this" < notes.txt
   </Property>
   <Property name="-p, --concurrency" type="number" default="4">
     Max parallel generations.
+  </Property>
+  <Property name="--timeout" type="seconds" default="120">
+    Request timeout in seconds. Must be a positive integer.
   </Property>
   <Property name="-s, --system" type="string">
     System prompt.
@@ -203,6 +222,9 @@ cat voice-note.mp3 | ai audio transcribe -P openai -o transcript.txt
   <Property name="-p, --concurrency" type="number" default="4">
     Max parallel generations.
   </Property>
+  <Property name="--timeout" type="seconds" default="120">
+    Request timeout in seconds. Must be a positive integer.
+  </Property>
   <Property name="-q, --quiet" type="boolean">
     Suppress progress output.
   </Property>
@@ -245,6 +267,9 @@ cat announcement.txt | ai audio speak -P openai --format wav -o announcement.wav
   <Property name="-p, --concurrency" type="number" default="4">
     Max parallel transcriptions.
   </Property>
+  <Property name="--timeout" type="seconds" default="120">
+    Request timeout in seconds. Must be a positive integer.
+  </Property>
   <Property name="-q, --quiet" type="boolean">
     Suppress progress output.
   </Property>
@@ -263,6 +288,37 @@ cat recording.mp3 | ai audio transcribe -P openai
 
 ---
 
+## evaluate
+
+Ask named Boolean, Choice, and Score questions against shared stdin:
+
+```bash
+cat ticket.txt |
+  ai evaluate \
+    --boolean "refund=Refund requested?" \
+    --choice "team=Which team?" \
+    --choices "team=billing,support" \
+    --score "tone=How positive?" \
+    --levels "tone=angry,neutral,happy"
+
+ai evaluate --questions triage.json < ticket.json
+```
+
+Output is the SDK evaluation result as JSON, including named typed answers,
+probabilities, usage, provider metadata, and response information. Repeat question
+flags to ask more questions in one request.
+Text, JSON objects, and arrays remain one shared state.
+
+Use `--questions` for structured instructions and criteria, `--input auto|text|json`
+to control parsing, `--model` to choose one evaluation model, `--provider-options`
+for the SDK’s provider-specific settings, and `--max-retries` or `--timeout` for request controls.
+
+See [Evaluate](/docs/evaluate) for every flag, the question-file schema, probability
+semantics, and examples of using the answers in scripts. Valid evaluations exit
+zero even for false or uncertain answers; your code owns thresholds and routing.
+
+---
+
 ## models
 
 List available models for a provider, or show detailed info for one model.
@@ -270,6 +326,7 @@ List available models for a provider, or show detailed info for one model.
 ```bash
 ai models
 ai models --type image
+ai models --type evaluation
 ai models --creator openai --json
 ai models claude-opus-4.6
 ai models anthropic/claude-sonnet-4.6 --json
@@ -296,7 +353,7 @@ ai models anthropic/claude-sonnet-4.6 --json
   </Property>
   <Property
     name="--type"
-    type="text | image | video | audio | speech | transcription"
+    type="text | image | video | audio | speech | transcription | evaluation"
   >
     Filter by modality (list mode only).
   </Property>
@@ -316,20 +373,27 @@ OpenRouter models are fetched from OpenRouter. Direct Anthropic and OpenAI metad
 
 Requests that exceed the per-command timeout are aborted automatically:
 
-| Command            | Timeout     |
-| ------------------ | ----------- |
-| `text`             | 120 seconds |
-| `image`            | 300 seconds |
-| `video`            | 300 seconds |
-| `audio speak`      | 120 seconds |
+| Command            | Timeout                           |
+| ------------------ | --------------------------------- |
+| `evaluate`         | 30 seconds per evaluation request |
+| `text`             | 120 seconds                       |
+| `image`            | 300 seconds                       |
+| `video`            | 300 seconds                       |
+| `audio speak`      | 120 seconds                       |
 | `audio transcribe` | 120 seconds |
 
 Image and video generation use a longer timeout because models typically need more processing time.
 
+Use `--timeout <seconds>` to allow a longer request without changing models. The value must be a positive integer:
+
+```bash
+ai image --timeout 600 "a detailed sprite atlas"
+```
+
 ## Exit codes
 
-| Code | Meaning                                       |
-| ---- | --------------------------------------------- |
-| `0`  | Success                                       |
-| `1`  | All generations failed                        |
-| `2`  | Partial failure (some succeeded, some failed) |
+| Code | Meaning                                                  |
+| ---- | -------------------------------------------------------- |
+| `0`  | Success                                                  |
+| `1`  | Invalid input or request failure; all generations failed |
+| `2`  | Partial generation failure (some succeeded, some failed) |

@@ -16,8 +16,18 @@ const multimodelrows: readonly row[] = [
     text: '$ ai image "a sunset" -m "openai/gpt-image-2,bfl/flux-2-pro"',
   },
   { tone: "dim", text: "" },
-  { tone: "code", text: "Saved to /Users/you/resp_img_a-1.png (3.2s)" },
-  { tone: "code", text: "Saved to /Users/you/resp_img_b-2.png (4.7s)" },
+  { tone: "code", text: "Saved to /Users/you/resp_img_a-1.<format> (3.2s)" },
+  { tone: "code", text: "Saved to /Users/you/resp_img_b-2.<format> (4.7s)" },
+];
+
+const evaluationrows: readonly row[] = [
+  { tone: "dim", text: "$ cat ticket.txt |" },
+  { tone: "cmd", text: "  ai evaluate \\" },
+  { tone: "cmd", text: '    --boolean "refund=Refund requested?" \\' },
+  { tone: "cmd", text: '    --choice "team=Which team?" \\' },
+  { tone: "cmd", text: '    --choices "team=billing,support" \\' },
+  { tone: "cmd", text: '    --score "tone=How positive?" \\' },
+  { tone: "cmd", text: '    --levels "tone=angry,neutral,happy"' },
 ];
 
 const pipingrows: readonly row[] = [
@@ -158,9 +168,21 @@ export function Features() {
           />
 
           <Spotlight
+            tone="slate"
+            title="One input. Many judgments."
+            description="Use AI SDK evaluation models to ask focused questions about the same input in one call. Get typed answers and probabilities your scripts can use directly."
+            bullets={[
+              "Boolean, Choice, and Score questions together",
+              "text, JSON objects, and arrays as shared state",
+              "SDK results with probabilities, metadata, and usage",
+            ]}
+            window={<Panel rows={evaluationrows} />}
+          />
+
+          <Spotlight
             tone="ash"
             title="Pipe everything."
-            description="Pipe text in as context, pipe images into video generation, turn text into speech, or transcribe piped audio. Raw output on stdout when piped, file saves when interactive."
+            description="Pipe text in as context, turn images into video, transcribe audio, or send typed judgments to jq. Compose AI with the commands you already use."
             bullets={[
               "text stdin becomes prompt context",
               "binary stdin for image, video, and audio workflows",

@@ -1,6 +1,6 @@
 import { experimental_generateVideo as generateVideo } from "ai";
-import type { Command } from "commander";
 
+import type { Command } from "../lib/command.js";
 import {
   collectImageReference,
   loadImageReferences,
@@ -12,6 +12,7 @@ import {
   parsePositiveInt,
   parseAspectRatio,
   parseNonNegativeFloat,
+  parseSize,
 } from "../lib/parse.js";
 import {
   createProviderResolver,
@@ -20,6 +21,7 @@ import {
 } from "../lib/providers.js";
 import { responseIdFromHeaders } from "../lib/response-id.js";
 import { readStdin } from "../lib/stdin.js";
+import { addTimeoutOption, timeoutMs } from "../lib/timeout.js";
 
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -31,15 +33,17 @@ interface VideoOptions {
   image?: string[];
   count?: string;
   aspectRatio?: string;
+  resolution?: string;
   duration?: string;
   quiet?: boolean;
   json?: boolean;
   concurrency?: string;
   preview?: boolean;
+  timeout: number;
 }
 
 export function registerVideoCommand(program: Command) {
-  program
+  const command = program
     .command("video")
     .description("Generate a video from a prompt")
     .argument("[prompt]", "The prompt to generate a video from")
@@ -60,6 +64,7 @@ export function registerVideoCommand(program: Command) {
     )
     .option("-n, --count <n>", "Number of videos per model (default: 1)")
     .option("--aspect-ratio <W:H>", "Aspect ratio (e.g. 16:9)")
+    .option("--resolution <WxH>", "Video resolution (e.g. 1920x1080)")
     .option("--duration <seconds>", "Video duration in seconds")
     .option("-q, --quiet", "Suppress progress output")
     .option("--json", "Output metadata as JSON")
@@ -70,8 +75,9 @@ export function registerVideoCommand(program: Command) {
     .option(
       "-p, --concurrency <n>",
       `Max parallel generations (default: ${DEFAULT_CONCURRENCY})`
-    )
-    .action(async (rawPrompt: string | undefined, opts: VideoOptions) => {
+    );
+  addTimeoutOption(command, DEFAULT_TIMEOUT_MS).action(
+    async (rawPrompt: string | undefined, opts: VideoOptions) => {
       const prompt = rawPrompt?.trim() || undefined;
       const stdin = await readStdin();
       const imageReferenceInputs = opts.image ?? [];
@@ -116,25 +122,19 @@ export function registerVideoCommand(program: Command) {
       const countPerModel = opts.count
         ? parsePositiveInt(opts.count, "count")
         : 1;
-      const aspectRatio = opts.aspectRatio
-        ? parseAspectRatio(opts.aspectRatio)
-        : undefined;
-      const duration = opts.duration
-        ? parseNonNegativeFloat(opts.duration, "duration")
-        : undefined;
+      const generationOptions = videoGenerationOptions(opts);
 
       const jobs = buildJobs(models, countPerModel);
 
       const { total, failed } = await runJobs(
         jobs,
         async (target) => {
-          const abort = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+          const abort = AbortSignal.timeout(timeoutMs(opts.timeout));
           const result = await generateVideo({
             model: getVideoModel(providerFor(target.provider), target.modelId),
             prompt: videoPrompt,
             abortSignal: abort,
-            aspectRatio,
-            duration,
+            ...generationOptions,
           });
           return {
             data: Buffer.from(result.video.uint8Array),
@@ -155,5 +155,24 @@ export function registerVideoCommand(program: Command) {
       );
       if (failed === total) process.exit(1);
       if (failed > 0) process.exit(2);
-    });
+    }
+  );
+}
+
+export function videoGenerationOptions(opts: {
+  aspectRatio?: string;
+  resolution?: string;
+  duration?: string;
+}) {
+  return {
+    aspectRatio: opts.aspectRatio
+      ? parseAspectRatio(opts.aspectRatio)
+      : undefined,
+    resolution: opts.resolution
+      ? parseSize(opts.resolution, "resolution")
+      : undefined,
+    duration: opts.duration
+      ? parseNonNegativeFloat(opts.duration, "duration")
+      : undefined,
+  };
 }
