@@ -31,7 +31,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "",
     transcription: "",
-    evaluation: "claude-sonnet-4-6",
+    evaluation: "claude-sonnet-5",
   },
   openai: {
     text: "gpt-5.5",
@@ -39,7 +39,7 @@ const DEFAULTS: Record<ProviderId, Record<Modality, string | null>> = {
     video: "",
     speech: "tts-1",
     transcription: "whisper-1",
-    evaluation: "gpt-5.5",
+    evaluation: "gpt-6-sol",
   },
   fal: {
     text: "",
@@ -170,11 +170,11 @@ const BUILTIN_MODELS: Record<ProviderId, ModelEntry[]> = {
   ],
   anthropic: [
     entry("claude-sonnet-4-6", "text", "anthropic"),
-    entry("claude-sonnet-4-6", "evaluation", "anthropic"),
+    entry("claude-sonnet-5", "evaluation", "anthropic"),
   ],
   openai: [
     entry("gpt-5.5", "text", "openai"),
-    entry("gpt-5.5", "evaluation", "openai"),
+    entry("gpt-6-sol", "evaluation", "openai"),
     entry("gpt-image-2", "image", "openai"),
     entry("tts-1", "speech", "openai"),
     entry("whisper-1", "transcription", "openai"),
