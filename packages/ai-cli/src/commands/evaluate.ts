@@ -1,7 +1,5 @@
 import { readFile } from "node:fs/promises";
 
-import { gateway } from "@ai-sdk/gateway";
-
 import type { Command } from "../lib/command.js";
 import {
   buildQuestions,
@@ -15,12 +13,18 @@ import {
   type InputFormat,
   type QuestionOptions,
 } from "../lib/evaluation.js";
-import { fetchGatewayModels, resolveModels } from "../lib/models.js";
+import { resolveModels, type ModelTarget } from "../lib/models.js";
+import {
+  createProvider,
+  getEvaluationModel,
+  resolveProviderId,
+} from "../lib/providers.js";
 import { readStdin } from "../lib/stdin.js";
 import { addTimeoutOption, timeoutMs } from "../lib/timeout.js";
 
 interface EvaluateOptions extends QuestionOptions {
   questions?: string;
+  provider?: string;
   model?: string;
   input: InputFormat;
   providerOptions?: string;
@@ -38,20 +42,18 @@ async function readTextFile(path: string, flag: string): Promise<string> {
   }
 }
 
-async function resolveEvaluationModel(userModel?: string): Promise<string> {
-  const models = resolveModels("evaluation", userModel);
-  if (models.length !== 1 || models[0].includes(","))
+function resolveEvaluationTarget(
+  provider?: string,
+  userModel?: string
+): ModelTarget {
+  const models = resolveModels(
+    resolveProviderId(provider),
+    "evaluation",
+    userModel === "jev" ? "openrouter:typesafe/jev-router" : userModel
+  );
+  if (models.length !== 1)
     throw new Error("ai evaluate requires exactly one evaluation model");
-  const model = models[0];
-  if (model === "jev") return "typesafe-ai/jev";
-  if (model.includes("/")) return model;
-  const known = (await fetchGatewayModels()).evaluation;
-  const resolved = resolveModels("evaluation", model, known)[0];
-  if (!resolved.includes("/"))
-    throw new Error(
-      `Unknown evaluation model: ${model}. Run ai models --type evaluation.`
-    );
-  return resolved;
+  return models[0];
 }
 
 const append = (value: string, previous: string[] = []) => [...previous, value];
@@ -92,8 +94,12 @@ export function registerEvaluateCommand(program: Command) {
       "JSON file of named questions with typed criteria"
     )
     .option(
+      "-P, --provider <provider>",
+      "Default provider: openrouter, anthropic, openai (default: openrouter)"
+    )
+    .option(
       "-m, --model <model>",
-      "Evaluation model ID or short name (default: typesafe-ai/jev)"
+      "Evaluation model ID or jev; prefix with provider: to switch providers (default: typesafe/jev-router)"
     )
     .option(
       "--input <format>",
@@ -131,9 +137,12 @@ export function registerEvaluateCommand(program: Command) {
         decodeEvaluationText((await readStdin()) ?? new Uint8Array()),
         options.input
       );
-      const model = await resolveEvaluationModel(options.model);
+      const target = resolveEvaluationTarget(options.provider, options.model);
       const result = await evaluateState(state, questions, {
-        model: gateway.evaluationModel(model),
+        model: getEvaluationModel(
+          createProvider(target.provider),
+          target.modelId
+        ),
         timeoutMs: timeoutMs(options.timeout),
         maxRetries: options.maxRetries,
         providerOptions,

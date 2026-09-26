@@ -2,15 +2,26 @@
   "name": "ai-cli",
   "version": "0.5.2",
   "description": "The AI SDK for your terminal: generate text and media, and evaluate typed questions",
-  "type": "module",
+  "keywords": [
+    "ai",
+    "ai-sdk",
+    "anthropic",
+    "audio",
+    "cli",
+    "fal",
+    "generative",
+    "image",
+    "local-ai",
+    "ollama",
+    "omlx",
+    "openai",
+    "openrouter",
+    "speech",
+    "text",
+    "transcription",
+    "video"
+  ],
   "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/vercel-labs/ai-cli.git"
-  },
-  "engines": {
-    "node": ">=22"
-  },
   "bin": {
     "ai": "./dist/index.js"
   },
@@ -18,23 +29,11 @@
     "dist",
     "README.md"
   ],
-  "keywords": [
-    "ai",
-    "cli",
-    "generative",
-    "image",
-    "video",
-    "audio",
-    "speech",
-    "transcription",
-    "text",
-    "ai-sdk",
-    "vercel"
-  ],
+  "type": "module",
   "scripts": {
     "dev": "bun run src/index.ts",
     "clean": "bun -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "bun run clean && bun build src/index.ts --target=node --outdir=dist",
+    "build": "bun run clean && bun build src/index.ts --target=node --outdir=dist && bun run scripts/assert-no-gateway.ts",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt --write src/",
     "format:check": "oxfmt --check src/",
@@ -43,14 +42,21 @@
     "prepack": "bun run typecheck && bun run build"
   },
   "dependencies": {
-    "@ai-sdk/gateway": "4.0.85",
-    "ai": "7.0.105",
     "sharp": "0.35.4"
   },
   "devDependencies": {
+    "@ai-sdk/anthropic": "4.0.65",
+    "@ai-sdk/fal": "3.0.50",
+    "@ai-sdk/openai": "4.0.78",
+    "@ai-sdk/openai-compatible": "3.0.57",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "@types/bun": "^1.3.13",
+    "ai": "7.0.116",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
     "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

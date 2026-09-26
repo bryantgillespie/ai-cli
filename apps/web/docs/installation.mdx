@@ -10,7 +10,7 @@ order: 2
 npm install -g ai-cli
 ```
 
-Or with other package managers:
+Or with another package manager:
 
 ```bash
 bun add -g ai-cli
@@ -18,26 +18,71 @@ pnpm add -g ai-cli
 yarn global add ai-cli
 ```
 
-## API key
+## Choose a provider
 
-ai-cli requires an API key for model access. Set one of the following environment variables:
+OpenRouter is the default provider. Set its API key:
+
+```bash
+export OPENROUTER_API_KEY="your-key"
+```
+
+To connect directly to another provider, set the provider and matching key:
+
+```bash
+export AI_CLI_PROVIDER="anthropic"
+export ANTHROPIC_API_KEY="your-key"
+```
+
+```bash
+export AI_CLI_PROVIDER="openai"
+export OPENAI_API_KEY="your-key"
+```
+
+```bash
+export AI_CLI_PROVIDER="fal"
+export FAL_API_KEY="your-key"
+```
+
+You can also choose a provider per command with `-P` or `--provider`.
+
+For local inference, start Ollama or OMLX and choose an installed model:
+
+```bash
+ai text -P ollama -m qwen3:latest "hello locally"
+ai text -P omlx -m qwen3:thinking "hello locally"
+```
+
+The default endpoints are `http://127.0.0.1:11434/v1` for Ollama and `http://127.0.0.1:8000/v1` for OMLX. Override them with `OLLAMA_BASE_URL` or `OMLX_BASE_URL`. Local servers do not require keys unless configured with authentication.
 
 <Properties>
-  <Property name="AI_GATEWAY_API_KEY" type="string">
-    Vercel AI Gateway key. Provides access to all supported models through a single key.
+  <Property name="OPENROUTER_API_KEY" type="string">
+    OpenRouter API key. Supports text, image, and video generation.
+  </Property>
+  <Property name="ANTHROPIC_API_KEY" type="string">
+    Anthropic API key. Supports text generation and vision input.
   </Property>
   <Property name="OPENAI_API_KEY" type="string">
-    Provider-specific key. Use if you only need OpenAI models.
+    OpenAI API key. Supports text, image, speech, and transcription.
+  </Property>
+  <Property name="FAL_API_KEY" type="string">
+    FAL API key. `FAL_KEY` is also accepted. Supports image, video, speech, and
+    transcription.
+  </Property>
+  <Property name="OLLAMA_BASE_URL" type="URL">
+    Optional Ollama endpoint override.
+  </Property>
+  <Property name="OMLX_BASE_URL" type="URL">
+    Optional OMLX endpoint override.
+  </Property>
+  <Property name="OLLAMA_API_KEY" type="string">
+    Optional key for an authenticated Ollama endpoint.
+  </Property>
+  <Property name="OMLX_API_KEY" type="string">
+    Optional key for an authenticated OMLX endpoint.
   </Property>
 </Properties>
 
-Get a gateway key from the [Vercel AI Gateway dashboard](https://vercel.com/docs/ai-gateway).
-
-```bash
-export AI_GATEWAY_API_KEY="your-key"
-```
-
-Add this to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to persist across sessions.
+Add exports to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to persist them.
 
 ## Verify
 
@@ -50,11 +95,10 @@ If you see generated text, you're ready.
 ## Requirements
 
 <Properties>
-  <Property name="Bun" type="1.0+" required>
-    ai-cli runs with Bun. Install from bun.sh.
+  <Property name="Node.js" type="22+" required>
+    Runtime for the published CLI.
   </Property>
-  <Property name="API key" type="string" required>
-    A Vercel AI Gateway key or provider-specific key.
+  <Property name="API key" type="string">
+    Required for cloud providers. Optional for authenticated local endpoints.
   </Property>
 </Properties>
-

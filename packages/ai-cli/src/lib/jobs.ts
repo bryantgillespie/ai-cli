@@ -3,13 +3,13 @@ import {
   displayImage,
   displayVideoFrame,
 } from "./kitty.js";
+import type { ModelTarget } from "./models.js";
 import type { OutputFormat } from "./output.js";
 import { writeOutput } from "./output.js";
 import { pMap } from "./p-map.js";
 import { Progress, MultiProgress, formatElapsed } from "./progress.js";
 
-export interface Job {
-  modelId: string;
+export interface Job extends ModelTarget {
   label: string;
   index: number;
 }
@@ -28,6 +28,7 @@ export interface RunJobsOptions {
 
 export interface RunJobOutput {
   index: number;
+  provider: ModelTarget["provider"];
   model: string;
   label: string;
   data: Buffer | string;
@@ -35,12 +36,12 @@ export interface RunJobOutput {
   elapsed_ms: number;
 }
 
-export function buildJobs(models: string[], countPerModel: number): Job[] {
+export function buildJobs(models: ModelTarget[], countPerModel: number): Job[] {
   let jobIndex = 0;
-  return models.flatMap((modelId) =>
+  return models.flatMap((model) =>
     Array.from({ length: countPerModel }, (_, i) => ({
-      modelId,
-      label: models.length > 1 ? `${modelId} #${i + 1}` : `#${i + 1}`,
+      ...model,
+      label: models.length > 1 ? `${model.reference} #${i + 1}` : `#${i + 1}`,
       index: jobIndex++,
     }))
   );
@@ -61,7 +62,7 @@ type GenerateResult = Buffer | string | GeneratedOutput;
 
 export async function runJobs(
   jobs: Job[],
-  generate: (modelId: string) => Promise<GenerateResult>,
+  generate: (target: ModelTarget) => Promise<GenerateResult>,
   opts: RunJobsOptions
 ): Promise<RunJobsResult> {
   const {
@@ -78,15 +79,14 @@ export async function runJobs(
 
   if (jobs.length === 1) {
     const job = jobs[0];
-    const { modelId } = job;
     const progress = new Progress(quiet);
     const start = Date.now();
-    progress.start(`Generating ${noun} with ${modelId}`);
+    progress.start(`Generating ${noun} with ${job.reference}`);
 
     try {
-      const generated = normalizeGeneratedOutput(await generate(modelId));
+      const generated = normalizeGeneratedOutput(await generate(job));
       const elapsed = Date.now() - start;
-      progress.stop(`Generated ${noun} with ${modelId}`);
+      progress.stop(`Generated ${noun} with ${job.reference}`);
 
       if (json) {
         const path = await writeOutput({
@@ -106,7 +106,8 @@ export async function runJobs(
           results: [
             {
               index: 1,
-              model: modelId,
+              provider: job.provider,
+              model: job.modelId,
               elapsed_ms: elapsed,
               success: true,
               file: path,
@@ -128,7 +129,8 @@ export async function runJobs(
         await afterOutputs?.([
           {
             index: 0,
-            model: modelId,
+            provider: job.provider,
+            model: job.modelId,
             label: job.label,
             data: generated.data,
             file: path,
@@ -153,11 +155,12 @@ export async function runJobs(
     supportsKittyGraphics();
 
   const lineIdxs = jobs.map((j) =>
-    multi.addLine(`Generating ${noun} ${j.label} with ${j.modelId}`)
+    multi.addLine(`Generating ${noun} ${j.label}`)
   );
 
   const results: {
     index: number;
+    provider: ModelTarget["provider"];
     model: string;
     success: boolean;
     elapsed_ms: number;
@@ -173,7 +176,7 @@ export async function runJobs(
       multi.startLine(lineIdxs[i]);
       const genStart = Date.now();
       try {
-        const generated = normalizeGeneratedOutput(await generate(job.modelId));
+        const generated = normalizeGeneratedOutput(await generate(job));
         const genElapsed = Date.now() - genStart;
         const suffix = `${i + 1}`;
         const path = await writeOutput({
@@ -204,6 +207,7 @@ export async function runJobs(
         );
         results.push({
           index: i,
+          provider: job.provider,
           model: job.modelId,
           success: true,
           elapsed_ms: genElapsed,
@@ -212,6 +216,7 @@ export async function runJobs(
         if (collectOutputs) {
           outputs.push({
             index: i,
+            provider: job.provider,
             model: job.modelId,
             label: job.label,
             data: generated.data,
@@ -228,6 +233,7 @@ export async function runJobs(
         );
         results.push({
           index: i,
+          provider: job.provider,
           model: job.modelId,
           success: false,
           elapsed_ms: genElapsed,
@@ -246,6 +252,7 @@ export async function runJobs(
       count: orderedResults.filter((r) => r.success).length,
       results: orderedResults.map((r) => ({
         index: r.index + 1,
+        provider: r.provider,
         model: r.model,
         elapsed_ms: r.elapsed_ms,
         success: r.success,

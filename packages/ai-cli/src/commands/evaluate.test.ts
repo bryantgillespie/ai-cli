@@ -3,19 +3,27 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Questions } from "../lib/evaluation.js";
+
 const directory = mkdtempSync(join(tmpdir(), "ai-cli-evaluate-"));
-const preload = join(directory, "gateway.js");
+const preload = join(directory, "openrouter.js");
 writeFileSync(
   preload,
   `
 import { appendFileSync } from "node:fs";
 let calls = 0;
 globalThis.fetch = async (url, init) => {
-  if (!String(url).endsWith('/evaluation-model')) throw new Error('Unexpected network request');
-  appendFileSync(process.env.TEST_REQUESTS, JSON.stringify(JSON.parse(init.body)) + '\\n');
+  if (!String(url).endsWith('/decisions')) throw new Error('Unexpected network request');
+  const body = JSON.parse(init.body);
+  appendFileSync(process.env.TEST_REQUESTS, JSON.stringify(body) + '\\n');
   calls++;
   const status = calls <= Number(process.env.TEST_FAIL_FIRST || 0) ? 503 : Number(process.env.TEST_STATUS || 200);
-  return new Response(JSON.stringify(status === 200 ? JSON.parse(process.env.TEST_RESPONSE) : { error: 'provider unavailable' }), { status, headers: { 'content-type': 'application/json' } });
+  if (status !== 200) return new Response(JSON.stringify({ error: { message: 'provider unavailable', code: status } }), { status, headers: { 'content-type': 'application/json' } });
+  // Fixtures use SDK answer shapes; the Decisions API reports booleans as "noul".
+  const fixture = JSON.parse(process.env.TEST_RESPONSE);
+  const answers = Object.fromEntries(Object.entries(fixture.answers).map(([id, answer]) => [id, answer.type === 'boolean' ? { type: 'noul', noul: answer.probability } : answer]));
+  const usage = fixture.usage && { input_tokens: fixture.usage.inputTokens, output_tokens: fixture.usage.outputTokens };
+  return new Response(JSON.stringify({ model: body.model, answers, ...(usage ? { usage } : {}) }), { headers: { 'content-type': 'application/json' } });
 };
 if (process.env.TEST_STDOUT_TTY) process.stdout.isTTY = true;
 `
@@ -55,6 +63,9 @@ async function run(
   extraEnv: Record<string, string> = {}
 ) {
   const requestPath = join(directory, `requests-${crypto.randomUUID()}.jsonl`);
+  const env = { ...process.env };
+  delete env.AI_CLI_PROVIDER;
+  delete env.AI_CLI_EVALUATION_MODEL;
   writeFileSync(requestPath, "");
   const proc = Bun.spawn(
     ["bun", "run", "--preload", preload, "src/index.ts", "evaluate", ...args],
@@ -64,9 +75,8 @@ async function run(
       stdout: "pipe",
       stderr: "pipe",
       env: {
-        ...process.env,
-        AI_GATEWAY_API_KEY: "test-key",
-        AI_CLI_EVALUATION_MODEL: "typesafe-ai/jev",
+        ...env,
+        OPENROUTER_API_KEY: "test-key",
         TEST_REQUESTS: requestPath,
         TEST_RESPONSE: JSON.stringify(response),
         ...extraEnv,
@@ -90,18 +100,12 @@ async function run(
 
 describe("evaluate CLI", () => {
   test("the graphic's exact syntax sends one mixed request and prints complete JSON in a TTY", async () => {
-    const providerMetadata = {
-      typesafe: { confidence: { team: 0.72, tone: 0.65 } },
-      gateway: { cost: "0.0001" },
-    };
     const result = await run(
       graphicArgs,
       "  Original ticket\n\nwith details\n",
       {
         answers: mixedAnswers,
-        providerMetadata,
         usage: { inputTokens: 20, outputTokens: 0 },
-        rounding: { probabilityDecimals: 2, scoreDecimals: 2 },
       },
       { TEST_STDOUT_TTY: "1" }
     );
@@ -111,6 +115,7 @@ describe("evaluate CLI", () => {
     expect(result.requests[0].state).toBe(
       "  Original ticket\n\nwith details\n"
     );
+    expect(result.requests[0].model).toBe("typesafe/jev-router");
     expect(Object.keys(result.requests[0].questions)).toHaveLength(3);
     expect(result.requests[0].questions.team.criteria).toEqual({
       billing: "billing",
@@ -119,13 +124,18 @@ describe("evaluate CLI", () => {
     const output = JSON.parse(result.stdout);
     expect(output).toMatchObject({
       answers: mixedAnswers,
-      providerMetadata,
+      providerMetadata: {
+        openrouter: { answers: { refund: {}, team: {}, tone: {} } },
+      },
       usage: { inputTokens: 20, outputTokens: 0, totalTokens: 20 },
       rounding: { probabilityDecimals: 2, scoreDecimals: 2 },
-      response: { modelId: "typesafe-ai/jev" },
+      response: { modelId: "typesafe/jev-router" },
     });
     expect(Number.isNaN(Date.parse(output.response.timestamp))).toBe(false);
-    expect(output.response.body.answers).toEqual(mixedAnswers);
+    expect(output.response.body.answers.refund).toEqual({
+      type: "noul",
+      noul: 0.01,
+    });
     expect(output.response.headers["content-type"]).toBe("application/json");
     expect(Object.keys(output).sort()).toEqual([
       "answers",
@@ -152,7 +162,7 @@ describe("evaluate CLI", () => {
     writeFileSync(path, JSON.stringify({ team: question }));
     writeFileSync(
       providers,
-      JSON.stringify({ gateway: { order: ["typesafe-ai"] } })
+      JSON.stringify({ openrouter: { provider: { order: ["typesafe"] } } })
     );
     const result = await run(
       [
@@ -173,10 +183,9 @@ describe("evaluate CLI", () => {
       { message: "Refund please" },
       { account: "123" },
     ]);
+    expect(result.requests[0].model).toBe("typesafe/jev-router");
     expect(result.requests[0].questions.team).toEqual(question);
-    expect(result.requests[0].providerOptions).toEqual({
-      gateway: { order: ["typesafe-ai"] },
-    });
+    expect(result.requests[0].provider).toEqual({ order: ["typesafe"] });
     expect(JSON.parse(result.stdout).usage).toEqual({});
   });
 
@@ -184,32 +193,37 @@ describe("evaluate CLI", () => {
     const fixture = {
       answers: mixedAnswers,
       usage: { inputTokens: 20, outputTokens: 0 },
-      warnings: [],
-      rounding: { probabilityDecimals: 2 },
-      providerMetadata: { typesafe: { confidence: { team: 0.72 } } },
     };
     const result = await run(graphicArgs, "ticket", fixture);
     expect(result.exitCode).toBe(0);
 
     const { experimental_evaluate } = await import("ai");
-    const { createGateway } = await import("@ai-sdk/gateway");
-    const gateway = createGateway({
+    const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
+    const output = JSON.parse(result.stdout);
+    const openrouter = createOpenRouter({
       apiKey: "test-key",
       fetch: Object.assign(
         async () =>
-          new Response(JSON.stringify(fixture), {
+          new Response(JSON.stringify(output.response.body), {
             headers: { "content-type": "application/json" },
           }),
         { preconnect: () => {} }
       ),
     });
+    const questions = Object.fromEntries(
+      Object.entries(
+        result.requests[0].questions as Record<string, { type: string }>
+      ).map(([id, question]) => [
+        id,
+        question.type === "noul" ? { ...question, type: "boolean" } : question,
+      ])
+    ) as Questions;
     const sdk = await experimental_evaluate({
-      model: gateway.evaluationModel("typesafe-ai/jev"),
+      model: openrouter.evaluationModel("typesafe/jev-router"),
       state: result.requests[0].state,
-      questions: result.requests[0].questions,
+      questions,
       maxRetries: 0,
     });
-    const output = JSON.parse(result.stdout);
     const expected = JSON.parse(JSON.stringify(sdk));
     expected.response.timestamp = output.response.timestamp;
     expect(output).toEqual(expected);

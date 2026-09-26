@@ -17,7 +17,6 @@ export function formatPricePerMillion(perToken: string): string {
   return `$${trimNumber(value * 1_000_000, 4)}/M`;
 }
 
-// The gateway reports web_search pricing in dollars per 1K searches
 export function formatWebSearchPrice(perThousand: string): string {
   const value = Number.parseFloat(perThousand);
   if (!Number.isFinite(value)) return perThousand;

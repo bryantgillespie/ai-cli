@@ -1,23 +1,27 @@
 import type { Command } from "../lib/command.js";
 import {
-  formatLatency,
   formatPerUnitPrice,
   formatPricePerMillion,
   formatReleaseDate,
-  formatThroughput,
   formatTokenCount,
-  formatUptime,
   formatWebSearchPrice,
 } from "../lib/format.js";
 import {
   expandModelId,
-  fetchGatewayModels,
-  fetchModelEndpoints,
+  fetchModelCatalog,
+  parseModelTarget,
   type Modality,
+  type ModelCatalog,
   type ModelEntry,
 } from "../lib/models.js";
+import {
+  PROVIDER_IDS,
+  resolveProviderId,
+  type ProviderId,
+} from "../lib/providers.js";
 
 type ModelFilter = Modality | "audio";
+type ProviderSelection = ProviderId | "all";
 
 function groupByCreator(models: ModelEntry[]): Map<string, ModelEntry[]> {
   const groups = new Map<string, ModelEntry[]>();
@@ -40,10 +44,16 @@ function pricingString(pricing: ModelEntry["pricing"], key: string) {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-async function showModelInfo(input: string, json: boolean): Promise<void> {
-  const gatewayModels = await fetchGatewayModels();
-  const id = expandModelId(input, gatewayModels.lookup);
-  const entry = gatewayModels.lookup.find((m) => m.id === id);
+async function showModelInfo(
+  input: string,
+  json: boolean,
+  selection: ProviderSelection
+): Promise<void> {
+  const provider = providerForModelInfo(input, selection);
+  const target = parseModelTarget(input, provider);
+  const catalog = await fetchModelCatalog(target.provider);
+  const id = expandModelId(target.modelId, catalog.lookup);
+  const entry = catalog.lookup.find((model) => model.id === id);
   if (!entry) {
     process.stderr.write(
       `Error: model not found: ${input}\nRun "ai models" to list available models\n`
@@ -51,11 +61,11 @@ async function showModelInfo(input: string, json: boolean): Promise<void> {
     process.exit(1);
   }
 
-  const endpointsInfo = await fetchModelEndpoints(entry.id);
-
   if (json) {
     const output = {
+      provider: target.provider,
       id: entry.id,
+      reference: `${target.provider}:${entry.id}`,
       ...(entry.name ? { name: entry.name } : {}),
       ...(entry.description ? { description: entry.description } : {}),
       creator: entry.creator,
@@ -67,16 +77,15 @@ async function showModelInfo(input: string, json: boolean): Promise<void> {
       ...(entry.maxTokens != null ? { maxTokens: entry.maxTokens } : {}),
       ...(entry.released != null ? { released: entry.released } : {}),
       ...(entry.pricing ? { pricing: entry.pricing } : {}),
-      ...(endpointsInfo && endpointsInfo.endpoints.length > 0
-        ? { endpoints: endpointsInfo.endpoints }
-        : {}),
     };
     process.stdout.write(JSON.stringify(output, null, 2) + "\n");
     return;
   }
 
   process.stdout.write(
-    entry.name ? `\n${entry.name}  ${entry.id}\n` : `\n${entry.id}\n`
+    entry.name
+      ? `\n${entry.name}  ${target.provider}:${entry.id}\n`
+      : `\n${target.provider}:${entry.id}\n`
   );
 
   const meta: string[] = [];
@@ -116,47 +125,80 @@ async function showModelInfo(input: string, json: boolean): Promise<void> {
     }
   }
 
-  const endpoints = endpointsInfo?.endpoints ?? [];
-  if (endpoints.length > 0) {
-    const table: string[][] = [
-      ["provider", "context", "latency", "throughput", "uptime"],
-    ];
-    for (const ep of endpoints) {
-      table.push([
-        ep.provider_name ?? "unknown",
-        ep.context_length ? formatTokenCount(ep.context_length) : "—",
-        ep.latency_last_1h?.p50 != null
-          ? formatLatency(ep.latency_last_1h.p50)
-          : "—",
-        ep.throughput_last_1h?.p50 != null
-          ? formatThroughput(ep.throughput_last_1h.p50)
-          : "—",
-        ep.uptime_last_1d != null ? formatUptime(ep.uptime_last_1d) : "—",
-      ]);
-    }
-    const widths = table[0].map((_, col) =>
-      Math.max(...table.map((row) => row[col].length))
-    );
-    process.stdout.write("\nProviders\n");
-    for (const row of table) {
-      const line = row
-        .map((cell, col) => cell.padEnd(widths[col] + 2))
-        .join("")
-        .trimEnd();
-      process.stdout.write(`  ${line}\n`);
-    }
-  }
-
   process.stdout.write("\n");
+}
+
+function resolveProviderSelection(input?: string): ProviderSelection {
+  const value = input ?? process.env.AI_CLI_PROVIDER ?? "openrouter";
+  return value === "all" ? value : resolveProviderId(value);
+}
+
+function providerForModelInfo(
+  input: string,
+  selection: ProviderSelection
+): ProviderId {
+  if (selection !== "all") return selection;
+  const prefix = input.slice(0, input.indexOf(":"));
+  if (PROVIDER_IDS.includes(prefix as ProviderId)) return prefix as ProviderId;
+  throw new Error(
+    'model must use a provider-qualified ID with "--provider all"'
+  );
+}
+
+function filterEntries(
+  entries: ModelEntry[],
+  filterType?: ModelFilter,
+  filterCreator?: string
+): ModelEntry[] {
+  return entries.filter((model) => {
+    const matchesType = filterType
+      ? filterType === "audio"
+        ? model.capabilities.includes("speech") ||
+          model.capabilities.includes("transcription")
+        : model.capabilities.includes(filterType)
+      : true;
+    const matchesCreator = filterCreator
+      ? model.creator.toLowerCase() === filterCreator
+      : true;
+    return matchesType && matchesCreator;
+  });
+}
+
+function catalogSections(
+  catalog: ModelCatalog,
+  filterType?: ModelFilter
+): { title: string; entries: ModelEntry[] }[] {
+  const sections: { title: string; entries: ModelEntry[] }[] = [];
+  if (!filterType || filterType === "text")
+    sections.push({ title: "Text", entries: catalog.text });
+  if (!filterType || filterType === "image")
+    sections.push({ title: "Image", entries: catalog.image });
+  if (!filterType || filterType === "video")
+    sections.push({ title: "Video", entries: catalog.video });
+  if (!filterType || filterType === "evaluation")
+    sections.push({ title: "Evaluation", entries: catalog.evaluation });
+  if (!filterType || filterType === "audio" || filterType === "speech")
+    sections.push({ title: "Speech", entries: catalog.speech });
+  if (!filterType || filterType === "audio" || filterType === "transcription") {
+    sections.push({
+      title: "Transcription",
+      entries: catalog.transcription,
+    });
+  }
+  return sections;
 }
 
 export function registerModelsCommand(program: Command) {
   program
     .command("models")
-    .description("List available models from AI Gateway")
+    .description("List available models for a provider")
     .argument(
       "[model]",
-      "Show detailed info for a model (e.g. anthropic/claude-opus-4.6)"
+      "Show detailed info for a model (e.g. anthropic/claude-sonnet-4.6)"
+    )
+    .option(
+      "-P, --provider <provider>",
+      "Provider: openrouter, anthropic, openai, fal, ollama, omlx, all (default: openrouter)"
     )
     .option(
       "--type <type>",
@@ -167,8 +209,14 @@ export function registerModelsCommand(program: Command) {
     .action(
       async (
         model: string | undefined,
-        opts: { type?: string; creator?: string; json?: boolean }
+        opts: {
+          provider?: string;
+          type?: string;
+          creator?: string;
+          json?: boolean;
+        }
       ) => {
+        const provider = resolveProviderSelection(opts.provider);
         if (model) {
           if (opts.type || opts.creator) {
             process.stderr.write(
@@ -176,7 +224,7 @@ export function registerModelsCommand(program: Command) {
             );
             process.exit(1);
           }
-          await showModelInfo(model, opts.json ?? false);
+          await showModelInfo(model, opts.json ?? false, provider);
           return;
         }
         const validTypes = [
@@ -197,76 +245,64 @@ export function registerModelsCommand(program: Command) {
         }
         const filterCreator = opts.creator?.toLowerCase();
 
-        const gatewayModels = await fetchGatewayModels();
+        const providers = provider === "all" ? PROVIDER_IDS : [provider];
+        const catalogs = await Promise.all(
+          providers.map((id) => fetchModelCatalog(id))
+        );
 
         if (opts.json) {
-          let entries = gatewayModels.all;
-          if (filterType) {
-            entries = entries.filter((m) =>
-              filterType === "audio"
-                ? m.capabilities.includes("speech") ||
-                  m.capabilities.includes("transcription")
-                : m.capabilities.includes(filterType)
-            );
-          }
-          if (filterCreator) {
-            entries = entries.filter(
-              (m) => m.creator.toLowerCase() === filterCreator
-            );
-          }
-          const output = entries.map((m) => ({
-            id: m.id,
-            ...(m.name ? { name: m.name } : {}),
-            ...(m.description ? { description: m.description } : {}),
-            creator: m.creator,
-            capabilities: m.capabilities,
-            ...(m.pricing ? { pricing: m.pricing } : {}),
-          }));
+          const output = catalogs.flatMap((catalog) =>
+            filterEntries(catalog.all, filterType, filterCreator).map((m) => ({
+              provider: catalog.provider,
+              id: m.id,
+              reference: `${catalog.provider}:${m.id}`,
+              ...(m.name ? { name: m.name } : {}),
+              ...(m.description ? { description: m.description } : {}),
+              creator: m.creator,
+              capabilities: m.capabilities,
+              ...(m.pricing ? { pricing: m.pricing } : {}),
+            }))
+          );
           process.stdout.write(JSON.stringify(output, null, 2) + "\n");
           return;
         }
 
-        const sections: { title: string; entries: ModelEntry[] }[] = [];
-        if (!filterType || filterType === "text")
-          sections.push({ title: "Text", entries: gatewayModels.text });
-        if (!filterType || filterType === "image")
-          sections.push({ title: "Image", entries: gatewayModels.image });
-        if (!filterType || filterType === "video")
-          sections.push({ title: "Video", entries: gatewayModels.video });
-        if (!filterType || filterType === "evaluation")
-          sections.push({
-            title: "Evaluation",
-            entries: gatewayModels.evaluation,
-          });
-        if (!filterType || filterType === "audio" || filterType === "speech")
-          sections.push({ title: "Speech", entries: gatewayModels.speech });
-        if (
-          !filterType ||
-          filterType === "audio" ||
-          filterType === "transcription"
-        )
-          sections.push({
-            title: "Transcription",
-            entries: gatewayModels.transcription,
-          });
-
         let totalCount = 0;
-        for (const section of sections) {
-          let entries = section.entries;
-          if (filterCreator) {
-            entries = entries.filter(
-              (m) => m.creator.toLowerCase() === filterCreator
-            );
+        for (const catalog of catalogs) {
+          const sections = catalogSections(catalog, filterType);
+          const providerCount = sections.reduce(
+            (sum, section) =>
+              sum +
+              filterEntries(section.entries, undefined, filterCreator).length,
+            0
+          );
+          if (providerCount === 0) continue;
+          if (provider === "all") {
+            process.stdout.write(`\n${catalog.provider}\n`);
           }
-          const grouped = groupByCreator(entries);
-          const count = [...grouped.values()].reduce((s, m) => s + m.length, 0);
-          if (count === 0) continue;
-          totalCount += count;
-          process.stdout.write(`\n${section.title} models (${count}):\n`);
-          for (const [creator, models] of grouped) {
-            process.stdout.write(`\n  ${creator}\n`);
-            for (const m of models) {
-              process.stdout.write(`    ${modelName(m.id)}\n`);
+          for (const section of sections) {
+            const entries = filterEntries(
+              section.entries,
+              undefined,
+              filterCreator
+            );
+            const grouped = groupByCreator(entries);
+            const count = [...grouped.values()].reduce(
+              (sum, models) => sum + models.length,
+              0
+            );
+            if (count === 0) continue;
+            totalCount += count;
+            process.stdout.write(`\n${section.title} models (${count}):\n`);
+            for (const [creator, models] of grouped) {
+              process.stdout.write(`\n  ${creator}\n`);
+              for (const m of models) {
+                const name =
+                  provider === "all"
+                    ? `${catalog.provider}:${m.id}`
+                    : modelName(m.id);
+                process.stdout.write(`    ${name}\n`);
+              }
             }
           }
         }
