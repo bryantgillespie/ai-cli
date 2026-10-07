@@ -6,7 +6,7 @@ order: 3.5
 
 `ai evaluate` brings AI SDK evaluation to the terminal. Ask typed questions about
 shared text or JSON, then use the SDK result in your scripts. The default model
-is `typesafe-ai/jev`, accessed through AI Gateway.
+is Jev (`typesafe/jev-router`), accessed through OpenRouter's Decisions API.
 
 ## One input, several questions
 
@@ -47,8 +47,8 @@ and each named flag builds an entry in `questions`:
 | `--provider-options options.json` | The SDK's `providerOptions` |
 
 The flags are shell conveniences for the SDK schema. Use a JSON file when you
-need structured instructions or richer criteria. Evaluation works with supported
-evaluation models through AI Gateway; Jev is the default model. Model-specific
+need structured instructions or richer criteria. Evaluation works with OpenRouter,
+OpenAI, and Anthropic evaluation models; Jev is the default model. Model-specific
 limits and capabilities are enforced by the SDK and provider.
 
 ## Question files
@@ -98,8 +98,11 @@ limits; the CLI does not hard-code a model-specific choice or level count.
 You can combine a question file with inline questions. Reusing a question ID
 across the file and flags is an error; no question is silently overwritten.
 Question fields are `type`, `instructions`, and `criteria`; unknown fields fail
-validation. The type must be explicit. The Gateway Boolean type corresponds to
+validation. The type must be explicit. The SDK Boolean type corresponds to
 TypeSafe's Noul primitive.
+
+OpenRouter's Decisions API needs a description for every Score level, and both
+`true` and `false` descriptions when a Boolean question has criteria.
 
 ## Input and requests
 
@@ -215,19 +218,22 @@ when changing instructions, criteria, or models.
 --score <id=question>      Ordered-score question (repeatable)
 --levels <id=low,...,high> Score levels for the named question (repeatable)
 --questions <path>        JSON file of named typed questions
--m, --model <id>          One evaluation model (default: typesafe-ai/jev)
+-P, --provider <name>     openrouter, anthropic, or openai (default: openrouter)
+-m, --model <id>          One evaluation model (default: typesafe/jev-router)
 --input <format>          auto, text, or json (default: auto)
 --provider-options <path> JSON object of provider names to option objects
 --max-retries <n>         Transient-error retries, including 0 (default: 2)
 --timeout <seconds>       Evaluation deadline including retries (default: 30)
 ```
 
-Requires `AI_GATEWAY_API_KEY` with access to the evaluation provider. Override
-the default with `AI_CLI_EVALUATION_MODEL` or `-m`; `-m jev` resolves to
-`typesafe-ai/jev`. Discover supported models with `ai models --type evaluation`.
+Jev needs `OPENROUTER_API_KEY`. Use `-P openai` or `-P anthropic` (or an
+`openai:` / `anthropic:` model prefix) with `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY` for their evaluation models. Override the default with
+`AI_CLI_EVALUATION_MODEL` or `-m`; `-m jev` resolves to
+`openrouter:typesafe/jev-router`. Discover models with `ai models --type evaluation`.
 
 Provider options use the SDK's provider namespaces. For example, save
-`{"gateway":{"order":["typesafe-ai"]}}` in a file and pass it with
+`{"openrouter":{"provider":{"order":["typesafe"]}}}` in a file and pass it with
 `--provider-options`. Support for individual options depends on the provider.
 
 The 30-second deadline covers evaluation and SDK retries after stdin has reached

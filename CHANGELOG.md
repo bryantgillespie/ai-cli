@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+
+- Removed the previous hosted gateway. OpenRouter is now the default provider, with direct Anthropic, OpenAI and FAL adapters selected through `-P` or `AI_CLI_PROVIDER`.
+- Model discovery now uses OpenRouter for routed models and models.dev for direct-provider metadata. Catalogs are cached locally and never block explicit model generation.
+- Quiver Arrow SVG output is not carried over from 0.5.2 because those models are only available through the hosted gateway.
+
+### New Features
+
+- Added direct Anthropic text and vision support through `ANTHROPIC_API_KEY`, with live model metadata from models.dev.
+- Added local Ollama and OMLX text providers with live model discovery, optional endpoint authentication, and vision input for capable models.
+- Added provider-qualified model IDs so cloud and local models can run concurrently in one command. `ai models -P all` lists qualified references across catalogs.
+- `ai evaluate` runs on OpenRouter (`typesafe/jev-router` by default), OpenAI or Anthropic evaluation models. Pick one with `-P` or a provider-qualified `-m`.
+
 ## 0.5.2
 
 <!-- release:start -->
@@ -167,7 +182,6 @@
 
 ### Improvements
 
-- **`--provider` renamed to `--creator`** — aligns with the AI Gateway's creator/model-name convention and reserves `--provider` for future multi-provider support (#48)
 - **Deduplicated `--json` output** — `ai models --json` now returns a flat array where each model appears once with all its capabilities (#48)
 - **Gateway fetch resilience** — failed gateway fetches are no longer permanently cached, so retries work correctly; requests time out after 5 seconds (#48)
 - **Documentation overhaul** — filled gaps across README, web docs, and added a SKILL.md for agent integration (#42)
@@ -180,6 +194,7 @@
 
 ### Breaking Changes
 
+- **`--provider` renamed to `--creator`** — aligns with the AI Gateway's creator/model-name convention and reserves `--provider` for future multi-provider support (#48)
 - **`ai completions` removed** — the shell completions command has been removed (#48)
 - **`--provider` flag renamed to `--creator`** — update any scripts using `--provider` to use `--creator` instead (#48)
 

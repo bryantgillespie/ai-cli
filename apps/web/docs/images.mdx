@@ -44,7 +44,7 @@ ai video "ocean waves"
 `audio speak` plays generated speech after saving it and renders a waveform from decoded audio samples. WAV output is decoded directly; MP3 and other encoded formats use a local decoder when available (`ffmpeg`, `mpg123`, `sox`, or `afconvert`).
 
 ```bash
-ai audio speak "Read this as a friendly update"
+ai audio speak -P openai "Read this as a friendly update"
 ```
 
 ## Controlling preview
@@ -54,8 +54,8 @@ Disable inline preview for a single command:
 ```bash
 ai image "a sunset" --no-preview
 ai video "a sunset" --no-preview
-ai audio speak "hello" --no-play
-ai audio speak "hello" --no-waveform
+ai audio speak -P openai "hello" --no-play
+ai audio speak -P openai "hello" --no-waveform
 ```
 
 Force image and video preview on in terminals that aren't auto-detected:
@@ -73,5 +73,6 @@ export AI_CLI_PREVIEW=0
 `AI_CLI_PREVIEW` controls visual previews only. Use `--no-play`, `--no-waveform`, `--quiet`, or `--json` to disable audio playback and waveform previews.
 
 <Callout type="tip">
-  When multiple images or audio files are generated (via `-n` or multi-model), previews are batched and displayed after all generations complete.
+  When multiple images or audio files are generated (via `-n` or multi-model),
+  previews are batched and displayed after all generations complete.
 </Callout>

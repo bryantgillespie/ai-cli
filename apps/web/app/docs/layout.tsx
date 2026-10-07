@@ -80,7 +80,6 @@ export default async function DocsRootLayout({
           navigation={navigation}
           docs={docs}
           basePath="/docs"
-          github="https://github.com/vercel-labs/ai-cli"
         />
         <div className="docs-shell min-h-screen">
           <div className="flex min-h-screen">
@@ -91,7 +90,6 @@ export default async function DocsRootLayout({
                   logo={<Logo />}
                   navigation={navigation}
                   basePath="/docs"
-                  github="https://github.com/vercel-labs/ai-cli"
                   collapsible
                   defaultOpenLevel={2}
                 />
